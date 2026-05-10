@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import 'api_auth.dart';
 
 class SummaryService {
   Future<String> summarizeText(String text) async {
@@ -9,10 +10,9 @@ class SummaryService {
       final response = await http
           .post(
             Uri.parse('${ApiConfig.backendBaseUrl}/summarize'),
-            headers: {
+            headers: await ApiAuth.headers(extra: {
               'content-type': 'application/json',
-              'x-app-token': ApiConfig.appClientToken,
-            },
+            }),
             body: jsonEncode({'text': text}),
           )
           .timeout(const Duration(minutes: 2));

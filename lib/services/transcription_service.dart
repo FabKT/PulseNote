@@ -7,6 +7,7 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/api_config.dart';
+import 'api_auth.dart';
 
 class TranscriptionService {
   WebSocketChannel? _liveChannel;
@@ -40,10 +41,13 @@ class TranscriptionService {
     _onLiveCompleted = onCompleted;
 
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.backendBaseUrl}/realtime/transcription-session'),
-        headers: {'x-app-token': ApiConfig.appClientToken},
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            Uri.parse(
+                '${ApiConfig.backendBaseUrl}/realtime/transcription-session'),
+            headers: await ApiAuth.headers(),
+          )
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode < 200 || response.statusCode >= 300) {
         _lastLiveError = _errorFromResponse(
           response.body,
@@ -118,7 +122,7 @@ class TranscriptionService {
         'POST',
         Uri.parse('${ApiConfig.backendBaseUrl}/transcribe'),
       );
-      request.headers['x-app-token'] = ApiConfig.appClientToken;
+      request.headers.addAll(await ApiAuth.headers());
       request.files.add(await http.MultipartFile.fromPath('audio', filePath));
 
       final streamed =

@@ -30,7 +30,7 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.description_rounded,
             title: 'Conditions d’utilisation',
-            subtitle: 'Règles d’usage de PulseNote.',
+            subtitle: 'Règles d’usage de l’application.',
           ),
           _SettingsTile(
             icon: Icons.notifications_rounded,

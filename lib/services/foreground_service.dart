@@ -10,7 +10,7 @@ class ForegroundService {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'audio_recorder_channel',
-        channelName: 'Enregistreur Audio IA',
+        channelName: 'Ultimate Audio Recorder',
         channelDescription: 'Service d\'écoute audio actif en arrière-plan',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,

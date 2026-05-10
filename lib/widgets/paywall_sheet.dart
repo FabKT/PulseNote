@@ -62,7 +62,7 @@ class _PaywallSheet extends StatelessWidget {
                 color: AppTheme.accent, size: 30),
           ),
           const SizedBox(height: 16),
-          const Text('Passez à PulseNote Premium',
+          const Text('Passez à Ultimate Premium',
               textAlign: TextAlign.center,
               style: TextStyle(
                   color: AppTheme.text,

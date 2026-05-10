@@ -1,6 +1,8 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/foreground_service.dart';
+import 'services/auth_service.dart';
 import 'state/app_state.dart';
 import 'app.dart';
 
@@ -11,6 +13,8 @@ import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  await AuthService.initializeGoogleSignIn();
 
   // Configure le service foreground (notification, options) au démarrage
   await ForegroundService.init();

@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import multer from 'multer';
 import OpenAI from 'openai';
+import admin from 'firebase-admin';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -18,6 +19,7 @@ const realtimeTranscriptionModel =
   process.env.REALTIME_TRANSCRIPTION_MODEL || 'gpt-realtime-whisper';
 const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 
 if (!openaiApiKey) {
   throw new Error('OPENAI_API_KEY is required.');
@@ -28,9 +30,10 @@ if (!appClientToken || appClientToken.length < 24) {
 }
 
 const openai = new OpenAI({ apiKey: openaiApiKey });
+admin.initializeApp({ projectId: firebaseProjectId });
 
 const upload = multer({
-  dest: path.join(os.tmpdir(), 'pulsenote-uploads'),
+  dest: path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads'),
   limits: {
     fileSize: 25 * 1024 * 1024,
     files: 1,
@@ -41,7 +44,18 @@ app.disable('x-powered-by');
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '1mb' }));
 
-function requireAppToken(req, res, next) {
+async function requireAuth(req, res, next) {
+  const authorization = req.header('authorization') || '';
+  const [, bearerToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
+  if (bearerToken) {
+    try {
+      req.user = await admin.auth().verifyIdToken(bearerToken);
+      return next();
+    } catch (error) {
+      console.warn('Firebase token rejected:', error?.message || error);
+    }
+  }
+
   const token = req.header('x-app-token');
   if (token !== appClientToken) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -59,10 +73,10 @@ function safeOpenAiError(error) {
 }
 
 app.get('/health', (_, res) => {
-  res.json({ ok: true, service: 'pulsenote-backend' });
+  res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
 });
 
-app.get('/diagnostics/openai', requireAppToken, async (_, res) => {
+app.get('/diagnostics/openai', requireAuth, async (_, res) => {
   try {
     const [fileModel, realtimeModel] = await Promise.all([
       openai.models.retrieve(transcriptionModel),
@@ -86,7 +100,7 @@ app.get('/diagnostics/openai', requireAppToken, async (_, res) => {
   }
 });
 
-app.post('/transcribe', requireAppToken, upload.single('audio'), async (req, res) => {
+app.post('/transcribe', requireAuth, upload.single('audio'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Missing audio file.' });
   }
@@ -114,7 +128,7 @@ app.post('/transcribe', requireAppToken, upload.single('audio'), async (req, res
   }
 });
 
-app.post('/summarize', requireAppToken, async (req, res) => {
+app.post('/summarize', requireAuth, async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   if (!text) {
     return res.status(400).json({ error: 'Missing text.' });
@@ -149,7 +163,7 @@ app.post('/summarize', requireAppToken, async (req, res) => {
   }
 });
 
-app.post('/realtime/transcription-session', requireAppToken, async (_, res) => {
+app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
   try {
     const response = await fetch(
       'https://api.openai.com/v1/realtime/transcription_sessions',
@@ -215,5 +229,5 @@ app.use((error, _, res, __) => {
 });
 
 app.listen(port, () => {
-  console.log(`PulseNote backend listening on port ${port}`);
+  console.log(`Ultimate Audio Recorder backend listening on port ${port}`);
 });

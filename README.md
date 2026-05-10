@@ -1,4 +1,4 @@
-# audio_recorder
+# Ultimate Audio Recorder
 
 A new Flutter project.
 

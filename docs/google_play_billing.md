@@ -1,10 +1,10 @@
-# Google Play Billing - PulseNote Premium
+# Google Play Billing - Ultimate Audio Recorder Premium
 
 ## Produit à créer
 
 - Type : abonnement
-- ID produit : `pulsenote_premium_monthly`
-- Nom public suggéré : `PulseNote Premium`
+- ID produit : `ultimate_audio_recorder_premium_monthly`
+- Nom public suggéré : `Ultimate Audio Recorder Premium`
 - Rythme : mensuel
 
 L'ID doit être strictement identique à celui défini dans `lib/config/billing_config.dart`.
@@ -13,7 +13,7 @@ L'ID doit être strictement identique à celui défini dans `lib/config/billing_
 
 1. Créer l'application dans Google Play Console.
 2. Configurer la signature et téléverser un build Android.
-3. Créer l'abonnement `pulsenote_premium_monthly`.
+3. Créer l'abonnement `ultimate_audio_recorder_premium_monthly`.
 4. Ajouter des testeurs de licence dans Play Console.
 5. Publier sur une piste de test interne.
 6. Installer l'app depuis le lien Play Store de test.

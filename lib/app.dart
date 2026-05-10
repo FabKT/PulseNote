@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/folders_screen.dart';
+import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/instant_transcription_screen.dart';
 import 'screens/keywords_screen.dart';
@@ -19,10 +20,10 @@ class AudioRecorderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PulseNote',
+      title: 'Ultimate Audio Recorder',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme(),
-      home: const MainNavigation(),
+      home: const AuthGate(child: MainNavigation()),
     );
   }
 }
@@ -158,7 +159,7 @@ class _TopHeader extends StatelessWidget {
         child: Row(children: [
           const Expanded(
             child: Text(
-              'PulseNote',
+              'Ultimate Audio Recorder',
               style: TextStyle(
                 color: AppTheme.text,
                 fontSize: 30,

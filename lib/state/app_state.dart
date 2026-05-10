@@ -601,8 +601,8 @@ class AppState extends ChangeNotifier {
     final exportDir = Directory('${dir.path}/exports');
     if (!await exportDir.exists()) await exportDir.create(recursive: true);
     final stamp = DateFormat('yyyy-MM-dd_HH-mm-ss').format(r.createdAt);
-    final file = File('${exportDir.path}/pulsenote_$stamp.txt');
-    await file.writeAsString('PulseNote - Export audio\n\n'
+    final file = File('${exportDir.path}/ultimate_audio_recorder_$stamp.txt');
+    await file.writeAsString('Ultimate Audio Recorder - Export audio\n\n'
         'Date : ${DateFormat('dd/MM/yyyy HH:mm').format(r.createdAt)}\n'
         'Durée : ${r.duration?.inSeconds ?? 0} secondes\n'
         'Source : ${r.triggerLabel}\n'

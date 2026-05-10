@@ -203,7 +203,7 @@ class PremiumLockedStatePlaceholder extends StatelessWidget {
                   fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           const Text(
-            'Cette automatisation fait partie de PulseNote Premium.',
+            'Cette automatisation fait partie de Ultimate Premium.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
           ),

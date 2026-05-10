@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "792550477817",
+    "project_id": "pulsenote-d2d85",
+    "storage_bucket": "pulsenote-d2d85.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:792550477817:android:a51e2c411b35bd3029f728",
+        "android_client_info": {
+          "package_name": "com.fabkt.ultimateaudiorecorder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAt2h_7_PKp8MHnhux96Onetiy6Yyl26FE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

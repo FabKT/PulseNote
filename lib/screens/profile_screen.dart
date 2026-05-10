@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/auth_service.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
 
@@ -11,6 +12,7 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (_, state, __) {
+        final user = AuthService.currentUser;
         final favorites = state.recordings.where((r) => r.isFavorite).length;
         final transcribed =
             state.recordings.where((r) => r.transcription != null).length;
@@ -30,29 +32,39 @@ class ProfileScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: AppTheme.panel(radius: 18),
-                child: const Row(children: [
+                child: Row(children: [
                   CircleAvatar(
                     radius: 28,
                     backgroundColor: AppTheme.primary,
-                    child: Icon(Icons.person_rounded, color: Color(0xFF04211F)),
+                    backgroundImage: user?.photoURL == null
+                        ? null
+                        : NetworkImage(user!.photoURL!),
+                    child: user?.photoURL == null
+                        ? const Icon(
+                            Icons.person_rounded,
+                            color: Color(0xFF04211F),
+                          )
+                        : null,
                   ),
-                  SizedBox(width: 14),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Utilisateur PulseNote',
-                          style: TextStyle(
+                          user?.displayName?.trim().isNotEmpty == true
+                              ? user!.displayName!
+                              : 'Utilisateur Ultimate Audio Recorder',
+                          style: const TextStyle(
                             color: AppTheme.text,
                             fontSize: 18,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
-                          'Espace personnel',
-                          style: TextStyle(color: AppTheme.textMuted),
+                          user?.email ?? 'Espace personnel',
+                          style: const TextStyle(color: AppTheme.textMuted),
                         ),
                       ],
                     ),
@@ -75,6 +87,12 @@ class ProfileScreen extends StatelessWidget {
                   _StatTile('Résumés', summarized),
                   _StatTile('Créneaux', state.schedules.length),
                 ],
+              ),
+              const SizedBox(height: 18),
+              OutlinedButton.icon(
+                onPressed: AuthService.signOut,
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Se déconnecter'),
               ),
             ],
           ),

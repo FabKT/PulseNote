@@ -1,4 +1,4 @@
-# PulseNote - Deploiement production
+# Ultimate Audio Recorder - Deploiement production
 
 Cette configuration de production garde la cle OpenAI uniquement cote backend.
 L'application Flutter ne contient que l'URL HTTPS du backend et un token

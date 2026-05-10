@@ -2,7 +2,7 @@
 
 ## Choix technique
 
-Pour PulseNote, l'option recommandée est OpenAI :
+Pour Ultimate Audio Recorder, l'option recommandée est OpenAI :
 
 - Fichiers audio enregistrés : `gpt-4o-transcribe`
 - Transcription instantanée : Realtime transcription avec session éphémère

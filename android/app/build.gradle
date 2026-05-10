@@ -1,12 +1,13 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
+    id "com.google.gms.google-services"
     // Le plugin Flutter est ajouté par flutter create — ne pas supprimer
     id "dev.flutter.flutter-gradle-plugin"
 }
 
 android {
-    namespace "com.example.audio_recorder"
+    namespace "com.fabkt.ultimateaudiorecorder"
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -20,7 +21,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.audio_recorder"
+        applicationId "com.fabkt.ultimateaudiorecorder"
         // Le service foreground avec accès micro requiert minSdk 23
         minSdkVersion flutter.minSdkVersion
         targetSdk flutter.targetSdkVersion
