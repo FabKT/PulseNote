@@ -16,8 +16,16 @@ const openaiApiKey = process.env.OPENAI_API_KEY;
 const appClientToken = process.env.APP_CLIENT_TOKEN;
 const transcriptionModel =
   process.env.TRANSCRIPTION_MODEL || 'gpt-4o-transcribe';
-const realtimeTranscriptionModel =
+const requestedRealtimeTranscriptionModel =
   process.env.REALTIME_TRANSCRIPTION_MODEL || 'gpt-realtime-whisper';
+const realtimeTranscriptionModel = [
+  'whisper-1',
+  'gpt-4o-transcribe',
+  'gpt-4o-transcribe-latest',
+  'gpt-4o-mini-transcribe',
+].includes(requestedRealtimeTranscriptionModel)
+  ? requestedRealtimeTranscriptionModel
+  : transcriptionModel;
 const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
@@ -223,19 +231,21 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          input_audio_format: 'pcm16',
-          input_audio_transcription: {
-            model: realtimeTranscriptionModel,
-            language: defaultLanguage,
-          },
-          input_audio_noise_reduction: {
-            type: 'near_field',
-          },
-          turn_detection: {
-            type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 500,
+          audio: {
+            input: {
+              format: {
+                type: 'audio/pcm',
+                rate: 24000,
+              },
+              transcription: {
+                model: realtimeTranscriptionModel,
+                language: defaultLanguage,
+              },
+              noise_reduction: {
+                type: 'near_field',
+              },
+              turn_detection: null,
+            },
           },
         }),
         signal: AbortSignal.timeout(15000),
