@@ -231,22 +231,15 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          audio: {
-            input: {
-              format: {
-                type: 'audio/pcm',
-                rate: 24000,
-              },
-              transcription: {
-                model: realtimeTranscriptionModel,
-                language: defaultLanguage,
-              },
-              noise_reduction: {
-                type: 'near_field',
-              },
-              turn_detection: null,
-            },
+          input_audio_format: 'pcm16',
+          input_audio_transcription: {
+            model: realtimeTranscriptionModel,
+            language: defaultLanguage,
           },
+          input_audio_noise_reduction: {
+            type: 'near_field',
+          },
+          turn_detection: null,
         }),
         signal: AbortSignal.timeout(15000),
       },
