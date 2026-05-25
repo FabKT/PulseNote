@@ -223,7 +223,7 @@ app.post('/summarize', requireAuth, async (req, res) => {
 app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
   try {
     const response = await fetch(
-      'https://api.openai.com/v1/realtime/sessions',
+      'https://api.openai.com/v1/realtime/client_secrets',
       {
         method: 'POST',
         headers: {
@@ -231,21 +231,27 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: 'transcription',
-          audio: {
-            input: {
-              format: {
-                type: 'audio/pcm',
-                rate: 24000,
+          expires_after: {
+            anchor: 'created_at',
+            seconds: 600,
+          },
+          session: {
+            type: 'transcription',
+            audio: {
+              input: {
+                format: {
+                  type: 'audio/pcm',
+                  rate: 24000,
+                },
+                transcription: {
+                  model: realtimeTranscriptionModel,
+                  language: defaultLanguage,
+                },
+                noise_reduction: {
+                  type: 'near_field',
+                },
+                turn_detection: null,
               },
-              transcription: {
-                model: realtimeTranscriptionModel,
-                language: defaultLanguage,
-              },
-              noise_reduction: {
-                type: 'near_field',
-              },
-              turn_detection: null,
             },
           },
         }),
