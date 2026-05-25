@@ -223,7 +223,7 @@ app.post('/summarize', requireAuth, async (req, res) => {
 app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
   try {
     const response = await fetch(
-      'https://api.openai.com/v1/realtime/transcription_sessions',
+      'https://api.openai.com/v1/realtime/sessions',
       {
         method: 'POST',
         headers: {
@@ -231,15 +231,23 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          input_audio_format: 'pcm16',
-          input_audio_transcription: {
-            model: realtimeTranscriptionModel,
-            language: defaultLanguage,
+          type: 'transcription',
+          audio: {
+            input: {
+              format: {
+                type: 'audio/pcm',
+                rate: 24000,
+              },
+              transcription: {
+                model: realtimeTranscriptionModel,
+                language: defaultLanguage,
+              },
+              noise_reduction: {
+                type: 'near_field',
+              },
+              turn_detection: null,
+            },
           },
-          input_audio_noise_reduction: {
-            type: 'near_field',
-          },
-          turn_detection: null,
         }),
         signal: AbortSignal.timeout(15000),
       },
