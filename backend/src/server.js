@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -32,8 +33,15 @@ if (!appClientToken || appClientToken.length < 24) {
 const openai = new OpenAI({ apiKey: openaiApiKey });
 admin.initializeApp({ projectId: firebaseProjectId });
 
+const uploadDir = path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads');
 const upload = multer({
-  dest: path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads'),
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename: (_, file, cb) => {
+      const extension = audioExtension(file.originalname, file.mimetype);
+      cb(null, `${crypto.randomUUID()}${extension}`);
+    },
+  }),
   limits: {
     fileSize: 25 * 1024 * 1024,
     files: 1,
@@ -70,6 +78,47 @@ function safeOpenAiError(error) {
     type: error?.type || error?.error?.type || null,
     code: error?.code || error?.error?.code || null,
   };
+}
+
+function audioExtension(originalName = '', mimeType = '') {
+  const fromName = path.extname(originalName).toLowerCase();
+  const supportedExtensions = [
+    '.flac',
+    '.m4a',
+    '.mp3',
+    '.mp4',
+    '.mpeg',
+    '.mpga',
+    '.oga',
+    '.ogg',
+    '.wav',
+    '.webm',
+  ];
+  if (supportedExtensions.includes(fromName)) return fromName;
+
+  const cleanMime = mimeType.toLowerCase().split(';')[0].trim();
+  switch (cleanMime) {
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return '.wav';
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return '.mp3';
+    case 'audio/mp4':
+    case 'audio/m4a':
+    case 'audio/x-m4a':
+      return '.m4a';
+    case 'audio/aac':
+      return '.aac';
+    case 'audio/ogg':
+      return '.ogg';
+    case 'audio/webm':
+      return '.webm';
+    case 'audio/flac':
+      return '.flac';
+    default:
+      return '.m4a';
+  }
 }
 
 app.get('/health', (_, res) => {
