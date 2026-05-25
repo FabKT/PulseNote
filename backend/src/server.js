@@ -17,15 +17,15 @@ const appClientToken = process.env.APP_CLIENT_TOKEN;
 const transcriptionModel =
   process.env.TRANSCRIPTION_MODEL || 'gpt-4o-transcribe';
 const requestedRealtimeTranscriptionModel =
-  process.env.REALTIME_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe-latest';
-const defaultRealtimeTranscriptionModel = 'gpt-4o-transcribe-latest';
+  process.env.REALTIME_TRANSCRIPTION_MODEL || 'gpt-realtime-whisper';
+const defaultRealtimeTranscriptionModel = 'gpt-realtime-whisper';
 const realtimeTranscriptionModel = [
   'whisper-1',
+  'gpt-realtime-whisper',
   'gpt-4o-transcribe',
-  'gpt-4o-transcribe-latest',
   'gpt-4o-mini-transcribe',
+  'gpt-4o-mini-transcribe-2025-03-20',
   'gpt-4o-mini-transcribe-2025-12-15',
-  'gpt-4o-transcribe-diarize',
 ].includes(requestedRealtimeTranscriptionModel)
   ? requestedRealtimeTranscriptionModel
   : defaultRealtimeTranscriptionModel;
