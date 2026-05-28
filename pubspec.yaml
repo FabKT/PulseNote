@@ -1,0 +1,58 @@
+name: audio_recorder
+description: Enregistreur audio intelligent avec activation programmée et traitement IA
+version: 1.0.0+1
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Enregistrement audio
+  record: ^5.1.2
+  audioplayers: ^6.6.0
+
+  # Service foreground Android (garde l'app vivante en arrière-plan)
+  flutter_foreground_task: ^8.11.0
+
+  # Stockage local
+  shared_preferences: ^2.2.3
+  path_provider: ^2.1.4
+
+  # Achats intégrés / abonnements Google Play
+  in_app_purchase: ^3.2.0
+
+  # Gestion des permissions (micro, notifications)
+  permission_handler: ^11.3.1
+
+  # Gestion d'état réactive
+  provider: ^6.1.2
+
+  # Formatage des dates/heures
+  intl: ^0.19.0
+  http: ^1.2.2
+  http_parser: ^4.0.2
+  crypto: ^3.0.6
+  speech_to_text: ^7.0.0
+
+  cupertino_icons: ^1.0.6
+  firebase_core: ^4.7.0
+  firebase_auth: ^6.4.0
+  google_sign_in: ^7.2.0
+  file_picker: ^11.0.2
+  ffmpeg_kit_flutter_new: ^4.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+dependency_overrides:
+  # record_linux v0.7.2 est incompatible avec record_platform_interface v1.5.0
+  # (méthodes startStream et hasPermission manquantes). On force v1.3.0.
+  record_linux: ^1.3.0
+
+flutter:
+  uses-material-design: true
