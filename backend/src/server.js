@@ -30,6 +30,11 @@ const realtimeTranscriptionModel = [
   ? requestedRealtimeTranscriptionModel
   : defaultRealtimeTranscriptionModel;
 const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
+const imageModel = process.env.IMAGE_MODEL || 'gpt-image-2';
+const imageSize = process.env.IMAGE_SIZE || '1024x1536';
+const imageQuality = process.env.IMAGE_QUALITY || 'high';
+const imageFormat = process.env.IMAGE_FORMAT || 'png';
+const mangaPageCreditCost = Number(process.env.CREDIT_COST_MANGA_PAGE || 10);
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 
@@ -132,6 +137,275 @@ function audioExtension(originalName = '', mimeType = '') {
   }
 }
 
+function cleanText(value, fallback = '') {
+  return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function clampPanelCount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 6;
+  return Math.min(12, Math.max(1, Math.round(parsed)));
+}
+
+function normalizeMangaAssets(selectedAssets) {
+  if (!Array.isArray(selectedAssets)) return [];
+  return selectedAssets
+    .map((asset) => ({
+      id: cleanText(asset?.id),
+      name: cleanText(asset?.name),
+      role: cleanText(asset?.role, 'Reference'),
+    }))
+    .filter((asset) => asset.id && asset.name);
+}
+
+function classifyMangaTask(input) {
+  const text = `${input.prompt} ${input.editPrompt || ''}`.toLowerCase();
+
+  if (input.operation === 'edit') {
+    if (/\b(replace|swap|remplace|remplacer|changer le personnage)\b/.test(text)) {
+      return 'strict_character_replacement';
+    }
+    if (/\b(correct|corrige|fix|repair|cibl|panel|case|bras|jambe|expression|pose)\b/.test(text)) {
+      return 'targeted_correction';
+    }
+    return 'existing_image_modification';
+  }
+
+  if (/\b(storyboard|planche|panel|case|cases|page|layout|composition)\b/.test(text)) {
+    return 'storyboard_page_creation';
+  }
+
+  return 'free_creation_with_references';
+}
+
+function inventoryMangaAssets(input) {
+  const inventory = {
+    identityRefs: [],
+    structureRefs: [],
+    inspirationRefs: [],
+    postureRefs: [],
+    styleRefs: [],
+    backgrounds: [],
+    objects: [],
+  };
+
+  for (const asset of input.selectedAssets) {
+    if (asset.role === 'Character') {
+      inventory.identityRefs.push(asset.name);
+      continue;
+    }
+    if (asset.role === 'Background') {
+      inventory.backgrounds.push(asset.name);
+      continue;
+    }
+    if (asset.role === 'Object') {
+      inventory.objects.push(asset.name);
+      continue;
+    }
+    if (asset.role === 'Generated Page') {
+      inventory.structureRefs.push(asset.name);
+      continue;
+    }
+
+    const label = asset.name.toLowerCase();
+    if (/\b(pose|posture|action|gesture)\b/.test(label)) {
+      inventory.postureRefs.push(asset.name);
+    } else if (/\b(style|ink|shading|screentone|hatching)\b/.test(label)) {
+      inventory.styleRefs.push(asset.name);
+    } else {
+      inventory.inspirationRefs.push(asset.name);
+    }
+  }
+
+  return inventory;
+}
+
+function formatPromptList(items, fallback) {
+  if (!items.length) return fallback;
+  return items.map((item) => `- ${item}`).join('\n');
+}
+
+function mangaTaskLabel(taskType) {
+  const labels = {
+    free_creation_with_references: 'creation / free composition with references',
+    storyboard_page_creation: 'creation / manga page from storyboard-like instructions',
+    existing_image_modification:
+      'modification / preserve existing result and alter requested parts',
+    strict_character_replacement: 'strict character replacement',
+    targeted_correction: 'targeted correction',
+  };
+  return labels[taskType] || labels.free_creation_with_references;
+}
+
+function buildMangaImagePrompt(input) {
+  const taskType = classifyMangaTask(input);
+  const inventory = inventoryMangaAssets(input);
+  const isModification = [
+    'existing_image_modification',
+    'strict_character_replacement',
+    'targeted_correction',
+  ].includes(taskType);
+  const characterNames = inventory.identityRefs.slice(0, 4);
+  const userRequest =
+    input.operation === 'edit' && input.editPrompt ? input.editPrompt : input.prompt;
+  const panelLines = Array.from({ length: input.panelCount }, (_, index) => {
+    const panel = index + 1;
+    if (panel === 1) return 'Panel 1: establish the scene and character emotion.';
+    if (panel === 2) return 'Panel 2: develop the main spatial relationship.';
+    if (panel === 3) return 'Panel 3: show the decisive action beat.';
+    if (panel === input.panelCount) {
+      return `Panel ${panel}: deliver the final reaction or impact beat.`;
+    }
+    return `Panel ${panel}: continue the action while preserving readable character identities.`;
+  });
+
+  return {
+    taskType,
+    prompt: [
+      'OBJECTIVE:',
+      isModification
+        ? "Modify the existing manga image according to the user's requested correction. Preserve all successful parts."
+        : "Generate a finished vertical manga page according to the user's request and selected references.",
+      '',
+      'USER REQUEST:',
+      userRequest,
+      '',
+      'DESCRIPTION OF PROVIDED IMAGE ROLES:',
+      `Target image to modify: ${
+        input.existingImageDataUrl && isModification
+          ? 'provided by the current generated page'
+          : 'none'
+      }.`,
+      `Character identity references:\n${formatPromptList(
+        inventory.identityRefs,
+        '- none selected',
+      )}`,
+      `Storyboard / structure references:\n${formatPromptList(
+        inventory.structureRefs,
+        '- inferred from prompt and page workspace',
+      )}`,
+      `Posture references:\n${formatPromptList(inventory.postureRefs, '- none selected')}`,
+      `Inspiration references:\n${formatPromptList(
+        inventory.inspirationRefs,
+        '- none selected',
+      )}`,
+      `Style references:\n${formatPromptList(
+        inventory.styleRefs,
+        '- default manga rendering',
+      )}`,
+      `Background references:\n${formatPromptList(
+        inventory.backgrounds,
+        '- use only prompt-requested decor',
+      )}`,
+      `Object references:\n${formatPromptList(inventory.objects, '- none selected')}`,
+      '',
+      'UTILITY OF EACH IMAGE ROLE:',
+      'Character references define WHO the characters are: face, hair, outfit, silhouette, and distinctive traits.',
+      'Storyboard or generated page references define HOW the page is organized: panel structure, framing, action order, and composition.',
+      'Posture references define body angle, gesture, action mechanics, and orientation only.',
+      'Inspiration references influence only energy, mood, motion, or visual impact. They must not override identity, structure, roles, or dialogue.',
+      'Background and object references define decor and props only.',
+      '',
+      'TASK TYPE LOCK:',
+      mangaTaskLabel(taskType),
+      '',
+      'IDENTITY LOCK:',
+      characterNames.length > 1
+        ? `${characterNames.join(
+            ' and ',
+          )} must never be swapped, fused, or visually mixed. Each character keeps only their own identity traits.`
+        : 'Preserve the selected character identity traits exactly. Do not replace the selected character with a generic manga character.',
+      '',
+      'ROLE LOCK:',
+      'The narrative roles are fixed by the prompt. Do not swap who acts, who observes, who reacts, who attacks, who defends, or who carries the important object.',
+      '',
+      'PANEL FUNCTION LOCK:',
+      'Each panel has a fixed narrative function. Do not merge panel functions. Do not replace a specific panel function with a generic beautiful composition.',
+      panelLines.join('\n'),
+      '',
+      'PANEL GEOMETRY LOCK:',
+      `Create one vertical manga page with approximately ${input.panelCount} readable panels. The main action panel should be visually dominant unless the user explicitly says otherwise. Preserve clean gutters and reading order.`,
+      '',
+      'POSE / ACTION LOCK:',
+      'The requested pose, action mechanics, body angle, and gesture are not optional. Do not replace them with a generic pose.',
+      '',
+      'ORIENTATION / PERSPECTIVE LOCK:',
+      'Preserve camera angle, foreshortening, scale, spatial direction, and stated orientation. Back view stays back view, profile stays profile, front view stays front view, and three-quarter view stays three-quarter view.',
+      '',
+      'ANATOMY / COMPLETENESS LOCK:',
+      'Do not omit important limbs. Both arms and both legs must remain readable unless intentionally cropped. Do not lose the arm or leg that carries the action.',
+      '',
+      'EXPRESSION LOCK:',
+      'If the prompt gives a specific expression, it overrides a default expression from a character reference for that panel only. Identity remains unchanged.',
+      '',
+      'DIALOGUE LOCK:',
+      'If dialogue is requested, reproduce the exact text, keep the requested language, assign each line to the correct speaker, and place each bubble in the correct panel. Do not invent dialogue.',
+      '',
+      'STYLE LOCK:',
+      'Use finished manga artwork. If black and white manga is requested, do not use color. Use clean ink, flat values, screentones, controlled hatching, manga linework, and readable silhouettes. Do not use photorealism, glossy rendering, painterly shading, or noisy texture unless explicitly requested.',
+      '',
+      'BACKGROUND LOCK:',
+      'Use only the requested level of decor. Do not add unwanted complex scenery. If the prompt asks for minimal or empty backgrounds, keep them minimal or empty.',
+      '',
+      isModification ? 'PRESERVE:' : 'TARGETED PAGE INSTRUCTIONS:',
+      isModification
+        ? 'Preserve the existing layout, style, correct panels, correct character identities, successful composition, and any elements not named in the correction request.'
+        : input.prompt,
+      '',
+      isModification ? 'CHANGE:' : 'RESTRICTIONS:',
+      isModification
+        ? input.editPrompt || 'Apply only the explicitly requested changes.'
+        : 'No identity swapping. No character fusion. No unwanted color if black-and-white manga is implied. No missing limbs. No random extra characters. No text changes unless dialogue is explicitly requested.',
+      '',
+      'FINAL MANDATORY INSTRUCTION:',
+      isModification
+        ? 'Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, pose readability, and exact style.'
+        : 'Generate the final manga page so the selected character identities, narrative roles, panel functions, pose mechanics, orientation, style, and background level all follow the prompt and locks above.',
+    ].join('\n'),
+  };
+}
+
+function extractImageDataUrl(responseJson) {
+  const first = responseJson?.data?.[0];
+  if (first?.b64_json) {
+    return `data:image/${imageFormat};base64,${first.b64_json}`;
+  }
+  if (first?.url) return first.url;
+  throw new Error('OpenAI returned no image data.');
+}
+
+function openAIImageErrorMessage(status, responseJson) {
+  const error = responseJson?.error;
+  if (!error) return `OpenAI image request failed with status ${status}.`;
+  return error.code
+    ? `${error.message || 'OpenAI image request failed.'} (${error.code})`
+    : error.message || 'OpenAI image request failed.';
+}
+
+async function requestMangaImage(finalPrompt) {
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: imageModel,
+      prompt: finalPrompt,
+      size: imageSize,
+      quality: imageQuality,
+      output_format: imageFormat,
+    }),
+    signal: AbortSignal.timeout(120000),
+  });
+
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(openAIImageErrorMessage(response.status, payload));
+  }
+  return extractImageDataUrl(payload);
+}
+
 app.get('/health', (_, res) => {
   res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
 });
@@ -218,6 +492,56 @@ app.post('/summarize', requireAuth, async (req, res) => {
     console.error('Summary failed:', error);
     res.status(500).json({
       error: 'Summary failed.',
+      details: safeOpenAiError(error),
+    });
+  }
+});
+
+app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
+  const operation = ['generate', 'edit', 'regenerate'].includes(req.body?.operation)
+    ? req.body.operation
+    : 'generate';
+  const prompt = cleanText(req.body?.prompt);
+  const editPrompt = cleanText(req.body?.editPrompt);
+  const finalUserPrompt = operation === 'edit' ? editPrompt || prompt : prompt;
+
+  if (!finalUserPrompt) {
+    return res.status(400).json({ error: 'Missing manga generation prompt.' });
+  }
+
+  const input = {
+    operation,
+    prompt: prompt || finalUserPrompt,
+    editPrompt,
+    editScope: cleanText(req.body?.editScope, 'single'),
+    activePage: Number.isFinite(Number(req.body?.activePage))
+      ? Number(req.body.activePage)
+      : 1,
+    pages: Array.isArray(req.body?.pages) ? req.body.pages : [1],
+    panelCount: clampPanelCount(req.body?.panelCount),
+    selectedAssets: normalizeMangaAssets(req.body?.selectedAssets),
+    existingImageDataUrl: cleanText(req.body?.existingImageDataUrl),
+  };
+
+  try {
+    const { prompt: finalPrompt, taskType } = buildMangaImagePrompt(input);
+    const imageDataUrl = await requestMangaImage(finalPrompt);
+
+    res.json({
+      imageDataUrl,
+      imageUrl: imageDataUrl,
+      finalPrompt,
+      taskType,
+      model: imageModel,
+      size: imageSize,
+      quality: imageQuality,
+      creditsUsed: mangaPageCreditCost,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Manga page generation failed:', error);
+    res.status(500).json({
+      error: 'Manga page generation failed.',
       details: safeOpenAiError(error),
     });
   }

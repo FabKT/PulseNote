@@ -90,6 +90,35 @@ Réponse :
 }
 ```
 
+### Manga page generation
+
+```http
+POST /api/manga/generate-page
+Content-Type: application/json
+```
+
+Body minimal :
+
+```json
+{
+  "operation": "generate",
+  "prompt": "Vertical black-and-white manga page with 6 readable panels...",
+  "panelCount": 6,
+  "selectedAssets": []
+}
+```
+
+Réponse :
+
+```json
+{
+  "imageDataUrl": "data:image/png;base64,...",
+  "imageUrl": "data:image/png;base64,...",
+  "model": "gpt-image-2",
+  "creditsUsed": 10
+}
+```
+
 ### Session transcription instantanée
 
 ```http
