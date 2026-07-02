@@ -35,6 +35,7 @@ const imageSize = process.env.IMAGE_SIZE || '1024x1536';
 const imageQuality = process.env.IMAGE_QUALITY || 'high';
 const imageFormat = process.env.IMAGE_FORMAT || 'png';
 const mangaPageCreditCost = Number(process.env.CREDIT_COST_MANGA_PAGE || 10);
+const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 
@@ -498,6 +499,10 @@ app.post('/summarize', requireAuth, async (req, res) => {
 });
 
 app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
+  if (!mangaForgeEnabled) {
+    return res.status(403).json({ error: 'Manga Forge generation is disabled.' });
+  }
+
   const operation = ['generate', 'edit', 'regenerate'].includes(req.body?.operation)
     ? req.body.operation
     : 'generate';
