@@ -67,7 +67,7 @@ const upload = multer({
 
 app.disable('x-powered-by');
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 async function requireAuth(req, res, next) {
   const authorization = req.header('authorization') || '';
@@ -409,6 +409,20 @@ async function requestMangaImage(finalPrompt) {
 
 app.get('/health', (_, res) => {
   res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
+});
+
+app.get('/api/manga/status', requireAuth, (_, res) => {
+  res.json({
+    ok: true,
+    service: 'pulsenote-manga-backend',
+    mangaForgeEnabled,
+    imageModel,
+    imageSize,
+    imageQuality,
+    imageFormat,
+    creditCost: mangaPageCreditCost,
+    generationEndpoint: '/api/manga/generate-page',
+  });
 });
 
 app.get('/diagnostics/openai', requireAuth, async (_, res) => {
