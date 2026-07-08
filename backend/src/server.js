@@ -31,11 +31,15 @@ const realtimeTranscriptionModel = [
   : defaultRealtimeTranscriptionModel;
 const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
 const imageModel = process.env.IMAGE_MODEL || 'gpt-image-2';
+const imageAnalysisModel = process.env.IMAGE_ANALYSIS_MODEL || 'gpt-4.1-mini';
 const imageSize = process.env.IMAGE_SIZE || '1024x1536';
 const imageQuality = process.env.IMAGE_QUALITY || 'high';
 const imageFormat = process.env.IMAGE_FORMAT || 'png';
 const imageGenerationTimeoutMs = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS || 420000);
 const imageEditTimeoutMs = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 540000);
+const imageAnalysisEnabled = process.env.IMAGE_ANALYSIS_ENABLED !== 'false';
+const imageAnalysisTimeoutMs = Number(process.env.IMAGE_ANALYSIS_TIMEOUT_MS || 120000);
+const referenceAnalysisCacheLimit = Number(process.env.REFERENCE_ANALYSIS_CACHE_LIMIT || 160);
 const imageRequestMaxAttempts = Math.max(
   1,
   Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 2)),
@@ -55,6 +59,7 @@ if (!appClientToken || appClientToken.length < 24) {
 
 const openai = new OpenAI({ apiKey: openaiApiKey });
 admin.initializeApp({ projectId: firebaseProjectId });
+const referenceAnalysisCache = new Map();
 
 const uploadDir = path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads');
 const upload = multer({
@@ -339,6 +344,259 @@ function assignImageLabels(input, isModification) {
   };
 }
 
+function truncateText(value, maxLength = 900) {
+  const text = cleanText(value);
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
+
+function extractResponseOutputText(payload) {
+  if (typeof payload?.output_text === 'string') return payload.output_text.trim();
+
+  const chunks = [];
+  for (const output of payload?.output || []) {
+    for (const content of output?.content || []) {
+      if (typeof content?.text === 'string') chunks.push(content.text);
+      if (typeof content?.value === 'string') chunks.push(content.value);
+    }
+  }
+
+  return chunks.join('\n').trim();
+}
+
+function responseApiErrorMessage(status, payload) {
+  const error = payload?.error;
+  if (!error) return `OpenAI reference image analysis failed with status ${status}.`;
+  return error.code
+    ? `${error.message || 'OpenAI reference image analysis failed.'} (${error.code})`
+    : error.message || 'OpenAI reference image analysis failed.';
+}
+
+async function requestOpenAIResponsePayload(body, timeoutMs, label) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= imageRequestMaxAttempts; attempt += 1) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const payload = await parseOpenAIImageResponse(response);
+
+      if (response.ok) return payload;
+
+      const message = responseApiErrorMessage(response.status, payload);
+      if (
+        attempt < imageRequestMaxAttempts &&
+        retryableOpenAIImageStatuses.has(response.status)
+      ) {
+        console.warn(`${label} failed on attempt ${attempt}; retrying: ${message}`);
+        await wait(retryDelayMs(attempt));
+        continue;
+      }
+
+      throw new Error(message);
+    } catch (error) {
+      lastError = error;
+      if (attempt < imageRequestMaxAttempts && isRetryableOpenAIImageError(error)) {
+        console.warn(
+          `${label} network error on attempt ${attempt}; retrying: ${errorText(error)}`,
+        );
+        await wait(retryDelayMs(attempt));
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError || new Error(`${label} failed.`);
+}
+
+function referenceAnalysisCacheKey(labelledInput, taskType) {
+  const hash = crypto.createHash('sha256');
+  hash.update(imageAnalysisModel);
+  hash.update(taskType);
+  hash.update(labelledInput.prompt || '');
+  hash.update(labelledInput.editPrompt || '');
+  hash.update(labelledInput.panelInstructions.join('|'));
+  hash.update(labelledInput.targetImageLabel || '');
+  hash.update(labelledInput.existingImageDataUrl || '');
+
+  for (const asset of labelledInput.selectedAssets) {
+    if (!asset.imageDataUrl) continue;
+    hash.update(asset.imageLabel || '');
+    hash.update(asset.name || '');
+    hash.update(asset.role || '');
+    hash.update(asset.characterName || '');
+    hash.update(asset.characterProfile || '');
+    hash.update(asset.description || '');
+    hash.update(asset.imageDataUrl);
+  }
+
+  return hash.digest('hex');
+}
+
+function rememberReferenceAnalysis(key, value) {
+  referenceAnalysisCache.set(key, value);
+  if (referenceAnalysisCache.size <= referenceAnalysisCacheLimit) return;
+  const oldestKey = referenceAnalysisCache.keys().next().value;
+  if (oldestKey) referenceAnalysisCache.delete(oldestKey);
+}
+
+function buildReferenceAnalysisContent(labelledInput, taskType) {
+  const content = [
+    {
+      type: 'input_text',
+      text: [
+        'Analyze the attached manga reference images for an image-generation prompt.',
+        'Your job is not to describe everything. Identify only the visual facts that should influence the final manga page.',
+        'The analysis must be self-contained: the final image prompt should remain useful even if the generator could not inspect the reference images.',
+        'Still assume the images will also be attached to the final image-generation request.',
+        '',
+        'Return compact markdown only. For each input image, use this exact structure:',
+        '### Input image N - role / name',
+        '- Essential visual facts:',
+        '- Role-specific utility:',
+        '- Foreground / midground / background cues:',
+        '- Character posture, gaze, expression, and orientation cues:',
+        '- Style, linework, color, lighting, and composition cues:',
+        '- Prompt emphasis:',
+        '- Boundaries / do not infer:',
+        '- Self-contained prompt sentence:',
+        '',
+        'Respect the declared role of each image:',
+        '- Character: extract identity, face, hair, outfit, silhouette, distinctive marks, expression baseline, posture, gaze, and traits to preserve.',
+        '- Pose: extract body mechanics, limb placement, weight, gesture, orientation, camera angle, and motion, not identity.',
+        '- Storyboard or Generated Page: extract panel layout, reading order, framing, gutters, composition, foreground/background placement, and action sequence.',
+        '- Style: extract medium, linework, shading, screentone, contrast, color policy, rendering finish, and texture.',
+        '- Background: extract location, decor, atmosphere, depth, perspective, foreground/background layers, and environmental constraints.',
+        '- Object: extract prop shape, scale, material, position, ownership, and narrative function.',
+        '- Target: extract what must be preserved and what can be changed.',
+        '- Inspiration: extract mood, impact, energy, rhythm, and visual intensity only; do not copy identity or layout.',
+        '',
+        `Task type: ${mangaTaskLabel(taskType)}.`,
+        `User prompt: ${truncateText(labelledInput.prompt, 1200) || '(empty)'}`,
+        labelledInput.editPrompt
+          ? `Edit prompt: ${truncateText(labelledInput.editPrompt, 900)}`
+          : '',
+        labelledInput.panelInstructions.length
+          ? `Panel notes: ${truncateText(labelledInput.panelInstructions.join(' | '), 1400)}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    },
+  ];
+
+  if (labelledInput.targetImageLabel && labelledInput.existingImageDataUrl) {
+    content.push({
+      type: 'input_text',
+      text: `${labelledInput.targetImageLabel} metadata: role=Target / current generated page to modify. It defines the existing layout, successful elements, character placement, style, and what should be preserved unless the edit prompt says otherwise.`,
+    });
+    content.push({
+      type: 'input_image',
+      image_url: labelledInput.existingImageDataUrl,
+      detail: 'high',
+    });
+  }
+
+  let imageCount = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
+  for (const asset of labelledInput.selectedAssets) {
+    if (!asset.imageDataUrl) continue;
+    if (imageCount >= 8) break;
+    imageCount += 1;
+    content.push({
+      type: 'input_text',
+      text: [
+        `${asset.imageLabel} metadata:`,
+        `name=${asset.name || 'untitled'}`,
+        `role=${asset.role}`,
+        `declared utility=${imageRoleCopy[asset.role]}`,
+        asset.characterName ? `assigned character=${asset.characterName}` : '',
+        asset.characterProfile ? `character profile=${asset.characterProfile}` : '',
+        asset.description ? `user notes=${asset.description}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | '),
+    });
+    content.push({
+      type: 'input_image',
+      image_url: asset.imageDataUrl,
+      detail: 'high',
+    });
+  }
+
+  return content;
+}
+
+function countReferenceImages(labelledInput) {
+  let count = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
+  for (const asset of labelledInput.selectedAssets) {
+    if (asset.imageDataUrl && count < 8) count += 1;
+  }
+  return count;
+}
+
+async function analyzeMangaReferenceImages(input, taskType) {
+  const isModification = [
+    'existing_image_modification',
+    'strict_character_replacement',
+    'targeted_correction',
+  ].includes(taskType);
+  const labelledInput = assignImageLabels(input, isModification);
+
+  if (!imageAnalysisEnabled || countReferenceImages(labelledInput) === 0) {
+    return labelledInput;
+  }
+
+  const cacheKey = referenceAnalysisCacheKey(labelledInput, taskType);
+  const cachedAnalysis = referenceAnalysisCache.get(cacheKey);
+  if (cachedAnalysis) {
+    return {
+      ...labelledInput,
+      referenceAnalysisText: cachedAnalysis,
+    };
+  }
+
+  try {
+    const payload = await requestOpenAIResponsePayload(
+      {
+        model: imageAnalysisModel,
+        input: [
+          {
+            role: 'user',
+            content: buildReferenceAnalysisContent(labelledInput, taskType),
+          },
+        ],
+        max_output_tokens: 1800,
+      },
+      imageAnalysisTimeoutMs,
+      'OpenAI manga reference image analysis',
+    );
+    const analysis = extractResponseOutputText(payload);
+    if (!analysis) throw new Error('OpenAI returned no reference image analysis.');
+    const cleanAnalysis = truncateText(analysis, 9000);
+    rememberReferenceAnalysis(cacheKey, cleanAnalysis);
+    return {
+      ...labelledInput,
+      referenceAnalysisText: cleanAnalysis,
+    };
+  } catch (error) {
+    console.warn('Reference image analysis failed; continuing with attached images:', error);
+    return {
+      ...labelledInput,
+      referenceAnalysisText:
+        'Automatic visual analysis failed for this request. The attached reference images are still provided to the image model; use their declared roles, user notes, and character profiles as the fallback reference interpretation.',
+    };
+  }
+}
+
 function mangaTaskLabel(taskType) {
   const labels = {
     free_creation_with_references: 'creation / free composition with references',
@@ -405,6 +663,15 @@ function buildMangaImagePrompt(input) {
         ? `- ${labelledInput.targetImageLabel}: current generated page / target image to modify. It defines composition, panel structure, successful elements, style, and elements to preserve.`
         : '- no target image provided',
       imageRoleLines.length ? imageRoleLines.join('\n') : '- no imported image references selected',
+      '',
+      'REFERENCE IMAGE ANALYSIS - SELF-CONTAINED VISUAL FACTS:',
+      labelledInput.referenceAnalysisText ||
+        '- no automatic visual reference analysis was produced for this request',
+      '',
+      'REFERENCE ANALYSIS PRIORITY:',
+      'Use the self-contained visual facts above as the written interpretation of the attached images. They identify what matters in each reference: identity, posture, gaze, foreground, background, style, composition, and role boundaries.',
+      'The attached images remain authoritative visual references, but the written analysis must be strong enough to guide the generation if the image model only partially follows or inspects the images.',
+      'Do not invent details that contradict the analysis, user prompt, character profiles, or declared image roles.',
       '',
       'IMAGE ROLE INVENTORY:',
       `Character identity references:\n${formatPromptList(
@@ -764,6 +1031,8 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     imageFormat,
     creditCost: mangaPageCreditCost,
     referenceImagesEnabled: true,
+    referenceImageAnalysisEnabled: imageAnalysisEnabled,
+    referenceImageAnalysisModel: imageAnalysisModel,
     maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
   });
@@ -900,8 +1169,10 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
   };
 
   try {
-    const { prompt: finalPrompt, taskType } = buildMangaImagePrompt(input);
-    const imageDataUrl = await requestMangaImage(finalPrompt, input, taskType);
+    const taskType = classifyMangaTask(input);
+    const analyzedInput = await analyzeMangaReferenceImages(input, taskType);
+    const { prompt: finalPrompt } = buildMangaImagePrompt(analyzedInput);
+    const imageDataUrl = await requestMangaImage(finalPrompt, analyzedInput, taskType);
 
     res.json({
       imageDataUrl,
