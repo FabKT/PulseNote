@@ -34,6 +34,12 @@ const imageModel = process.env.IMAGE_MODEL || 'gpt-image-2';
 const imageSize = process.env.IMAGE_SIZE || '1024x1536';
 const imageQuality = process.env.IMAGE_QUALITY || 'high';
 const imageFormat = process.env.IMAGE_FORMAT || 'png';
+const imageGenerationTimeoutMs = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS || 420000);
+const imageEditTimeoutMs = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 540000);
+const imageRequestMaxAttempts = Math.max(
+  1,
+  Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 2)),
+);
 const mangaPageCreditCost = Number(process.env.CREDIT_COST_MANGA_PAGE || 10);
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
@@ -541,6 +547,106 @@ function openAIImageErrorMessage(status, responseJson) {
     : error.message || 'OpenAI image request failed.';
 }
 
+const retryableOpenAIImageStatuses = new Set([
+  408,
+  409,
+  425,
+  429,
+  500,
+  502,
+  503,
+  504,
+  520,
+  522,
+  524,
+]);
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function retryDelayMs(attempt) {
+  return Math.min(1000 * 2 ** (attempt - 1), 8000);
+}
+
+function errorText(error) {
+  return error?.message || String(error);
+}
+
+function isRetryableOpenAIImageError(error) {
+  const name = (error?.name || '').toLowerCase();
+  const message = errorText(error).toLowerCase();
+
+  return (
+    name.includes('abort') ||
+    name.includes('timeout') ||
+    message.includes('fetch failed') ||
+    message.includes('terminated') ||
+    message.includes('socket') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout') ||
+    message.includes('und_err')
+  );
+}
+
+async function parseOpenAIImageResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  return {
+    error: {
+      message: text || 'OpenAI returned a non-JSON image response.',
+    },
+  };
+}
+
+async function requestOpenAIImagePayload(buildRequest, timeoutMs, label) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= imageRequestMaxAttempts; attempt += 1) {
+    try {
+      const request = buildRequest();
+      const response = await fetch(request.url, {
+        ...request.init,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const payload = await parseOpenAIImageResponse(response);
+
+      if (response.ok) return payload;
+
+      const message = openAIImageErrorMessage(response.status, payload);
+      if (
+        attempt < imageRequestMaxAttempts &&
+        retryableOpenAIImageStatuses.has(response.status)
+      ) {
+        console.warn(`${label} failed on attempt ${attempt}; retrying: ${message}`);
+        await wait(retryDelayMs(attempt));
+        continue;
+      }
+
+      throw new Error(message);
+    } catch (error) {
+      lastError = error;
+      if (attempt < imageRequestMaxAttempts && isRetryableOpenAIImageError(error)) {
+        console.warn(
+          `${label} network error on attempt ${attempt}; retrying: ${errorText(error)}`,
+        );
+        await wait(retryDelayMs(attempt));
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError || new Error(`${label} failed.`);
+}
+
 function dataUrlToImageBlob(dataUrl, fallbackName) {
   const match = /^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/i.exec(dataUrl || '');
   if (!match) return null;
@@ -578,54 +684,60 @@ function buildMangaImageInputs(input, taskType) {
 }
 
 async function requestMangaImageGeneration(finalPrompt) {
-  const response = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${openaiApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: imageModel,
-      prompt: finalPrompt,
-      size: imageSize,
-      quality: imageQuality,
-      output_format: imageFormat,
+  const payload = await requestOpenAIImagePayload(
+    () => ({
+      url: 'https://api.openai.com/v1/images/generations',
+      init: {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openaiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: imageModel,
+          prompt: finalPrompt,
+          size: imageSize,
+          quality: imageQuality,
+          output_format: imageFormat,
+        }),
+      },
     }),
-    signal: AbortSignal.timeout(120000),
-  });
+    imageGenerationTimeoutMs,
+    'OpenAI manga image generation',
+  );
 
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(openAIImageErrorMessage(response.status, payload));
-  }
   return extractImageDataUrl(payload);
 }
 
 async function requestMangaImageEdit(finalPrompt, imageInputs) {
-  const form = new FormData();
-  form.append('model', imageModel);
-  form.append('prompt', finalPrompt);
-  form.append('size', imageSize);
-  form.append('quality', imageQuality);
-  form.append('output_format', imageFormat);
+  const payload = await requestOpenAIImagePayload(
+    () => {
+      const form = new FormData();
+      form.append('model', imageModel);
+      form.append('prompt', finalPrompt);
+      form.append('size', imageSize);
+      form.append('quality', imageQuality);
+      form.append('output_format', imageFormat);
 
-  for (const image of imageInputs) {
-    form.append('image[]', image.blob, image.filename);
-  }
+      for (const image of imageInputs) {
+        form.append('image[]', image.blob, image.filename);
+      }
 
-  const response = await fetch('https://api.openai.com/v1/images/edits', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${openaiApiKey}`,
+      return {
+        url: 'https://api.openai.com/v1/images/edits',
+        init: {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${openaiApiKey}`,
+          },
+          body: form,
+        },
+      };
     },
-    body: form,
-    signal: AbortSignal.timeout(160000),
-  });
+    imageEditTimeoutMs,
+    'OpenAI manga image edit',
+  );
 
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(openAIImageErrorMessage(response.status, payload));
-  }
   return extractImageDataUrl(payload);
 }
 
