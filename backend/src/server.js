@@ -32,7 +32,22 @@ const realtimeTranscriptionModel = [
 const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
 const imageModel = process.env.IMAGE_MODEL || 'gpt-image-2';
 const imageAnalysisModel = process.env.IMAGE_ANALYSIS_MODEL || 'gpt-4.1-mini';
-const imageSize = process.env.IMAGE_SIZE || '1024x1536';
+const supportedMangaImageSizes = new Set(['1024x1536', '1536x1024']);
+function normalizeMangaImageSize(value, fallback = '1024x1536') {
+  const candidate = typeof value === 'string' ? value.trim() : '';
+  return supportedMangaImageSizes.has(candidate) ? candidate : fallback;
+}
+function mangaImageSizeFromAspectRatio(value) {
+  if (value === '3:2' || value === '4:3') return '1536x1024';
+  if (value === '2:3') return '1024x1536';
+  return '';
+}
+function normalizeMangaAspectRatio(value, requestedImageSize = imageSize) {
+  if (value === '3:2' || value === '4:3') return '3:2';
+  if (value === '2:3') return '2:3';
+  return requestedImageSize === '1536x1024' ? '3:2' : '2:3';
+}
+const imageSize = normalizeMangaImageSize(process.env.IMAGE_SIZE);
 const imageQuality = process.env.IMAGE_QUALITY || 'high';
 const imageFormat = process.env.IMAGE_FORMAT || 'png';
 const imageGenerationTimeoutMs = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS || 420000);
@@ -210,6 +225,11 @@ function normalizeMangaAssets(selectedAssets) {
       role: normalizeMangaRole(asset?.role),
       imageDataUrl: cleanImageDataUrl(asset?.imageDataUrl),
       mimeType: cleanText(asset?.mimeType),
+      imageWidth: Number.isFinite(Number(asset?.imageWidth)) ? Number(asset.imageWidth) : undefined,
+      imageHeight: Number.isFinite(Number(asset?.imageHeight))
+        ? Number(asset.imageHeight)
+        : undefined,
+      omitFromImageGeneration: Boolean(asset?.omitFromImageGeneration),
       characterId: cleanText(asset?.characterId),
       characterName: cleanText(asset?.characterName),
       characterProfile: cleanText(asset?.characterProfile),
@@ -433,6 +453,7 @@ function referenceAnalysisCacheKey(labelledInput, taskType) {
     hash.update(asset.imageLabel || '');
     hash.update(asset.name || '');
     hash.update(asset.role || '');
+    hash.update(asset.omitFromImageGeneration ? 'analysis-only' : 'generation-input');
     hash.update(asset.characterName || '');
     hash.update(asset.characterProfile || '');
     hash.update(asset.description || '');
@@ -457,7 +478,7 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'Analyze the attached manga reference images for an image-generation prompt.',
         'Your job is not to describe everything. Identify only the visual facts that should influence the final manga page.',
         'The analysis must be self-contained: the final image prompt should remain useful even if the generator could not inspect the reference images.',
-        'Still assume the images will also be attached to the final image-generation request.',
+        'Some images may be analysis-only if their canvas ratio conflicts with the requested final output. In those cases, extract useful visual facts without preserving their outer page shape or ratio.',
         '',
         'Return compact markdown only. For each input image, use this exact structure:',
         '### Input image N - role / name',
@@ -623,6 +644,18 @@ function buildMangaImagePrompt(input) {
     labelledInput.operation === 'edit' && labelledInput.editPrompt
       ? labelledInput.editPrompt
       : labelledInput.prompt;
+  const isLandscape = labelledInput.aspectRatio === '3:2';
+  const canvasFormatLine = isLandscape
+    ? 'Final image canvas must be landscape 3:2. Use the entire wide canvas as the manga spread itself. Do not draw a vertical page inside a horizontal white support. No blank side margins, no white padding, no poster frame, no centered portrait sheet.'
+    : 'Final image canvas must be portrait 2:3. Use the entire vertical canvas as the manga page itself. Do not add an outer support, poster frame, or extra blank margins.';
+  const objectiveLine = isModification
+    ? "Modify the existing manga image according to the user's requested correction. Preserve all successful parts while matching the requested final canvas format."
+    : isLandscape
+      ? "Generate a finished horizontal 3:2 manga spread according to the user's request and selected references."
+      : "Generate a finished vertical 2:3 manga page according to the user's request and selected references.";
+  const panelGeometryLine = isLandscape
+    ? `Create one horizontal manga spread in 3:2 with approximately ${labelledInput.panelCount} readable panels arranged across the full wide canvas. Reading direction: ${labelledInput.readingDirection}. The main action panel should be visually dominant unless the user explicitly says otherwise. Preserve clean gutters and reading order.`
+    : `Create one vertical manga page in 2:3 with approximately ${labelledInput.panelCount} readable panels. Reading direction: ${labelledInput.readingDirection}. The main action panel should be visually dominant unless the user explicitly says otherwise. Preserve clean gutters and reading order.`;
   const panelLines = Array.from({ length: labelledInput.panelCount }, (_, index) => {
     const panel = index + 1;
     const userPanel = cleanText(labelledInput.panelInstructions?.[index]);
@@ -639,7 +672,11 @@ function buildMangaImagePrompt(input) {
     .filter((asset) => asset.imageDataUrl)
     .map(
       (asset) =>
-        `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. This image ${imageRoleCopy[asset.role]}. ${
+        `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. ${
+          asset.omitFromImageGeneration
+            ? 'This reference is analysis-only for final generation; use the written visual facts and do not copy its canvas ratio, page silhouette, support, or margins.'
+            : `This image ${imageRoleCopy[asset.role]}.`
+        } ${
           asset.characterName ? `Assigned character profile: ${asset.characterName}.` : ''
         } ${asset.description ? `User notes: ${asset.description}.` : ''}`.trim(),
     );
@@ -648,9 +685,13 @@ function buildMangaImagePrompt(input) {
     taskType,
     prompt: [
       'OBJECTIVE:',
-      isModification
-        ? "Modify the existing manga image according to the user's requested correction. Preserve all successful parts."
-        : "Generate a finished vertical manga page according to the user's request and selected references.",
+      objectiveLine,
+      '',
+      'CANVAS FORMAT LOCK:',
+      canvasFormatLine,
+      isLandscape
+        ? 'The generated artwork itself must be 3:2 landscape. Characters, panels, speech bubbles, gutters, backgrounds, motion lines, and composition must occupy the 3:2 canvas naturally.'
+        : 'The generated artwork itself must be 2:3 portrait. Characters, panels, speech bubbles, gutters, backgrounds, motion lines, and composition must occupy the 2:3 canvas naturally.',
       '',
       'USER REQUEST:',
       userRequest,
@@ -670,7 +711,7 @@ function buildMangaImagePrompt(input) {
       '',
       'REFERENCE ANALYSIS PRIORITY:',
       'Use the self-contained visual facts above as the written interpretation of the attached images. They identify what matters in each reference: identity, posture, gaze, foreground, background, style, composition, and role boundaries.',
-      'The attached images remain authoritative visual references, but the written analysis must be strong enough to guide the generation if the image model only partially follows or inspects the images.',
+      'Attached images remain authoritative visual references only when they are provided to the final image request. For analysis-only images, rely on the written analysis and never preserve their canvas shape.',
       'Do not invent details that contradict the analysis, user prompt, character profiles, or declared image roles.',
       '',
       'IMAGE ROLE INVENTORY:',
@@ -730,7 +771,7 @@ function buildMangaImagePrompt(input) {
       panelLines.join('\n'),
       '',
       'PANEL GEOMETRY LOCK:',
-      `Create one vertical manga page with approximately ${labelledInput.panelCount} readable panels. Reading direction: ${labelledInput.readingDirection}. The main action panel should be visually dominant unless the user explicitly says otherwise. Preserve clean gutters and reading order.`,
+      panelGeometryLine,
       '',
       'POSE / ACTION LOCK:',
       'The requested pose, action mechanics, body angle, and gesture are not optional. Do not replace them with a generic pose.',
@@ -789,8 +830,8 @@ function buildMangaImagePrompt(input) {
       '',
       'FINAL MANDATORY INSTRUCTION:',
       isModification
-        ? 'Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, pose readability, and exact style.'
-        : 'Generate the final manga page so the selected character identities, narrative roles, panel functions, pose mechanics, orientation, style, and background level all follow the prompt and locks above.',
+        ? `${canvasFormatLine} Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, pose readability, and exact style.`
+        : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, pose mechanics, orientation, style, and background level all follow the prompt and locks above.`,
     ]
       .filter((line) => line !== '')
       .join('\n'),
@@ -942,6 +983,8 @@ function buildMangaImageInputs(input, taskType) {
 
   for (const asset of input.selectedAssets) {
     if (!asset.imageDataUrl) continue;
+    if (asset.omitFromImageGeneration) continue;
+    if (!shouldAttachMangaAssetImage(input, asset)) continue;
     const image = dataUrlToImageBlob(asset.imageDataUrl, asset.id || asset.name);
     if (image) images.push(image);
     if (images.length >= 8) break;
@@ -950,7 +993,28 @@ function buildMangaImageInputs(input, taskType) {
   return images;
 }
 
-async function requestMangaImageGeneration(finalPrompt) {
+function shouldAttachMangaAssetImage(input, asset) {
+  if (asset.omitFromImageGeneration) return false;
+  if (!asset.imageWidth || !asset.imageHeight) return true;
+  if (asset.role === 'Character') return true;
+
+  const sourceRatio = asset.imageWidth / asset.imageHeight;
+  const targetRatio = input.aspectRatio === '3:2' ? 3 / 2 : 2 / 3;
+  const mismatch = Math.abs(sourceRatio - targetRatio) / targetRatio > 0.18;
+  if (!mismatch) return true;
+
+  const layoutDominantRoles = new Set([
+    'Storyboard',
+    'Generated Page',
+    'Target',
+    'Inspiration',
+    'Style',
+  ]);
+  return !layoutDominantRoles.has(asset.role);
+}
+
+async function requestMangaImageGeneration(finalPrompt, requestedImageSize = imageSize) {
+  const size = normalizeMangaImageSize(requestedImageSize, imageSize);
   const payload = await requestOpenAIImagePayload(
     () => ({
       url: 'https://api.openai.com/v1/images/generations',
@@ -963,7 +1027,7 @@ async function requestMangaImageGeneration(finalPrompt) {
         body: JSON.stringify({
           model: imageModel,
           prompt: finalPrompt,
-          size: imageSize,
+          size,
           quality: imageQuality,
           output_format: imageFormat,
         }),
@@ -976,13 +1040,14 @@ async function requestMangaImageGeneration(finalPrompt) {
   return extractImageDataUrl(payload);
 }
 
-async function requestMangaImageEdit(finalPrompt, imageInputs) {
+async function requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSize = imageSize) {
+  const size = normalizeMangaImageSize(requestedImageSize, imageSize);
   const payload = await requestOpenAIImagePayload(
     () => {
       const form = new FormData();
       form.append('model', imageModel);
       form.append('prompt', finalPrompt);
-      form.append('size', imageSize);
+      form.append('size', size);
       form.append('quality', imageQuality);
       form.append('output_format', imageFormat);
 
@@ -1009,11 +1074,12 @@ async function requestMangaImageEdit(finalPrompt, imageInputs) {
 }
 
 async function requestMangaImage(finalPrompt, input, taskType) {
+  const requestedImageSize = normalizeMangaImageSize(input.size, imageSize);
   const imageInputs = buildMangaImageInputs(input, taskType);
   if (imageInputs.length > 0) {
-    return requestMangaImageEdit(finalPrompt, imageInputs);
+    return requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSize);
   }
-  return requestMangaImageGeneration(finalPrompt);
+  return requestMangaImageGeneration(finalPrompt, requestedImageSize);
 }
 
 app.get('/health', (_, res) => {
@@ -1027,12 +1093,14 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     mangaForgeEnabled,
     imageModel,
     imageSize,
+    supportedImageSizes: Array.from(supportedMangaImageSizes),
     imageQuality,
     imageFormat,
     creditCost: mangaPageCreditCost,
     referenceImagesEnabled: true,
     referenceImageAnalysisEnabled: imageAnalysisEnabled,
     referenceImageAnalysisModel: imageAnalysisModel,
+    referenceImageAspectGuard: true,
     maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
   });
@@ -1136,6 +1204,10 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
   const prompt = cleanText(req.body?.prompt);
   const editPrompt = cleanText(req.body?.editPrompt);
   const finalUserPrompt = operation === 'edit' ? editPrompt || prompt : prompt;
+  const requestedImageSize = normalizeMangaImageSize(
+    req.body?.size || mangaImageSizeFromAspectRatio(req.body?.aspectRatio),
+    imageSize,
+  );
 
   if (!finalUserPrompt) {
     return res.status(400).json({ error: 'Missing manga generation prompt.' });
@@ -1165,6 +1237,8 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
     readingDirection: ['right-to-left', 'left-to-right'].includes(req.body?.readingDirection)
       ? req.body.readingDirection
       : 'right-to-left',
+    aspectRatio: normalizeMangaAspectRatio(req.body?.aspectRatio, requestedImageSize),
+    size: requestedImageSize,
     existingImageDataUrl: cleanText(req.body?.existingImageDataUrl),
   };
 
@@ -1180,7 +1254,7 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
       finalPrompt,
       taskType,
       model: imageModel,
-      size: imageSize,
+      size: requestedImageSize,
       quality: imageQuality,
       creditsUsed: mangaPageCreditCost,
       createdAt: new Date().toISOString(),
