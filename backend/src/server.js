@@ -194,6 +194,19 @@ const imageRoleCopy = {
     'defines the current generated page structure and successful elements to preserve',
 };
 
+const mangaModificationTaskTypes = new Set([
+  'existing_image_modification',
+  'strict_character_replacement',
+  'targeted_correction',
+]);
+
+const generationAnalysisOnlyRoles = new Set([
+  'Inspiration',
+  'Style',
+  'Storyboard',
+  'Generated Page',
+]);
+
 function cleanText(value, fallback = '') {
   return typeof value === 'string' ? value.trim() : fallback;
 }
@@ -479,6 +492,8 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'Your job is not to describe everything. Identify only the visual facts that should influence the final manga page.',
         'The analysis must be self-contained: the final image prompt should remain useful even if the generator could not inspect the reference images.',
         'Some images may be analysis-only if their canvas ratio conflicts with the requested final output. In those cases, extract useful visual facts without preserving their outer page shape or ratio.',
+        'Never ask the final generator to copy an existing manga panel, franchise character, logo, exact dialogue, sound effect text, costume insignia, or composition from a reference image unless the user explicitly owns and requests that exact asset.',
+        'When a reference resembles an existing published manga, extract generic craft information only: panel hierarchy, energy, line density, motion rhythm, camera angle, ink contrast, screentone use, and emotional beat.',
         '',
         'Return compact markdown only. For each input image, use this exact structure:',
         '### Input image N - role / name',
@@ -494,8 +509,8 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'Respect the declared role of each image:',
         '- Character: extract identity, face, hair, outfit, silhouette, distinctive marks, expression baseline, posture, gaze, and traits to preserve.',
         '- Pose: extract body mechanics, limb placement, weight, gesture, orientation, camera angle, and motion, not identity.',
-        '- Storyboard or Generated Page: extract panel layout, reading order, framing, gutters, composition, foreground/background placement, and action sequence.',
-        '- Style: extract medium, linework, shading, screentone, contrast, color policy, rendering finish, and texture.',
+        '- Storyboard or Generated Page: extract panel layout, reading order, framing, gutters, foreground/background placement, and action sequence; do not preserve identifiable characters, symbols, exact dialogue, or published-panel composition.',
+        '- Style: extract medium, linework, shading, screentone, contrast, color policy, rendering finish, and texture; do not name or copy a specific artist/franchise style.',
         '- Background: extract location, decor, atmosphere, depth, perspective, foreground/background layers, and environmental constraints.',
         '- Object: extract prop shape, scale, material, position, ownership, and narrative function.',
         '- Target: extract what must be preserved and what can be changed.',
@@ -671,14 +686,16 @@ function buildMangaImagePrompt(input) {
   const imageRoleLines = labelledInput.selectedAssets
     .filter((asset) => asset.imageDataUrl)
     .map(
-      (asset) =>
-        `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. ${
-          asset.omitFromImageGeneration
+      (asset) => {
+        const analysisOnly = shouldTreatAssetAsAnalysisOnly(taskType, asset);
+        return `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. ${
+          analysisOnly
             ? 'This reference is analysis-only for final generation; use the written visual facts and do not copy its canvas ratio, page silhouette, support, or margins.'
             : `This image ${imageRoleCopy[asset.role]}.`
         } ${
           asset.characterName ? `Assigned character profile: ${asset.characterName}.` : ''
-        } ${asset.description ? `User notes: ${asset.description}.` : ''}`.trim(),
+        } ${asset.description ? `User notes: ${asset.description}.` : ''}`.trim();
+      },
     );
 
   return {
@@ -713,6 +730,12 @@ function buildMangaImagePrompt(input) {
       'Use the self-contained visual facts above as the written interpretation of the attached images. They identify what matters in each reference: identity, posture, gaze, foreground, background, style, composition, and role boundaries.',
       'Attached images remain authoritative visual references only when they are provided to the final image request. For analysis-only images, rely on the written analysis and never preserve their canvas shape.',
       'Do not invent details that contradict the analysis, user prompt, character profiles, or declared image roles.',
+      '',
+      'SOURCE TRANSFORMATION LOCK:',
+      'The final page must be an original manga page, not a redraw, imitation, trace, collage, or near-copy of a reference image.',
+      'Do not reproduce recognizable published manga characters, franchise costumes, logos, skull symbols, signature scars, exact faces, exact speech bubbles, exact sound effects, or exact panel composition from references.',
+      'For Inspiration, Style, Storyboard, and Generated Page references, extract only abstract craft cues: energy, panel hierarchy, camera distance, motion rhythm, ink density, screentone logic, contrast, and emotional intensity.',
+      'If the user did not explicitly request dialogue, do not place readable words in speech bubbles. Use blank bubbles, abstract marks, or no bubbles.',
       '',
       'IMAGE ROLE INVENTORY:',
       `Character identity references:\n${formatPromptList(
@@ -749,6 +772,7 @@ function buildMangaImagePrompt(input) {
       'Storyboard or generated page references define HOW the page is organized: panel structure, framing, action order, and composition.',
       'Posture references define body angle, gesture, action mechanics, and orientation only.',
       'Inspiration references influence only energy, mood, motion, or visual impact. They must not override identity, structure, roles, or dialogue.',
+      'Style references define generic rendering technique only. They do not authorize copying a specific published artist, franchise look, character design, or panel.',
       'Background and object references define decor and props only.',
       'Text instructions override ambiguous image interpretation. Never let inspiration override identity, panel function, role assignment, or dialogue.',
       '',
@@ -793,11 +817,11 @@ function buildMangaImagePrompt(input) {
       '',
       'STYLE LOCK:',
       labelledInput.styleMode === 'black-white'
-        ? 'Use finished black-and-white manga artwork. Do not use color. Use clean ink, flat values, screentones, controlled hatching, manga linework, and readable silhouettes.'
+        ? 'Use finished professional black-and-white manga artwork. Do not use color. Use crisp ink, clean black fills, controlled hatching, purposeful screentones, clear line weight hierarchy, flat values, strong silhouettes, and print-ready page readability.'
         : labelledInput.styleMode === 'color'
-          ? 'Use finished manga artwork in color while preserving clean ink, readable silhouettes, and controlled values.'
-          : 'Use finished manga artwork. If black and white manga is requested, do not use color. Use clean ink, flat values, screentones, controlled hatching, manga linework, and readable silhouettes.',
-      'Do not use photorealism, glossy rendering, painterly shading, or noisy texture unless explicitly requested.',
+          ? 'Use finished original manga artwork in color while preserving crisp ink, readable silhouettes, clear values, and disciplined cel-shaded color.'
+          : 'Use finished original manga artwork. If black and white manga is requested or implied, do not use color. Use crisp ink, clean black fills, flat values, purposeful screentones, controlled hatching, clear line weight hierarchy, and readable silhouettes.',
+      'Do not use photorealism, glossy rendering, painterly shading, muddy greys, random noisy texture, AI-smudge linework, or over-rendered grain unless explicitly requested.',
       '',
       'BACKGROUND LOCK:',
       labelledInput.backgroundLevel === 'empty'
@@ -983,8 +1007,7 @@ function buildMangaImageInputs(input, taskType) {
 
   for (const asset of input.selectedAssets) {
     if (!asset.imageDataUrl) continue;
-    if (asset.omitFromImageGeneration) continue;
-    if (!shouldAttachMangaAssetImage(input, asset)) continue;
+    if (!shouldAttachMangaAssetImage(input, asset, taskType)) continue;
     const image = dataUrlToImageBlob(asset.imageDataUrl, asset.id || asset.name);
     if (image) images.push(image);
     if (images.length >= 8) break;
@@ -993,8 +1016,17 @@ function buildMangaImageInputs(input, taskType) {
   return images;
 }
 
-function shouldAttachMangaAssetImage(input, asset) {
+function shouldTreatAssetAsAnalysisOnly(taskType, asset) {
+  if (asset.omitFromImageGeneration) return true;
+  const isModification = mangaModificationTaskTypes.has(taskType);
+  if (asset.role === 'Inspiration' || asset.role === 'Style') return true;
+  if (!isModification && generationAnalysisOnlyRoles.has(asset.role)) return true;
+  return false;
+}
+
+function shouldAttachMangaAssetImage(input, asset, taskType) {
   if (asset.omitFromImageGeneration) return false;
+  if (shouldTreatAssetAsAnalysisOnly(taskType, asset)) return false;
   if (!asset.imageWidth || !asset.imageHeight) return true;
   if (asset.role === 'Character') return true;
 
@@ -1101,6 +1133,7 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     referenceImageAnalysisEnabled: imageAnalysisEnabled,
     referenceImageAnalysisModel: imageAnalysisModel,
     referenceImageAspectGuard: true,
+    referenceCopyGuard: true,
     maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
   });
