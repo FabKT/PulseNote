@@ -796,11 +796,11 @@ function buildMangaImagePrompt(input) {
       '',
       'STYLE LOCK:',
       labelledInput.styleMode === 'black-white'
-        ? 'Use clean minimalist 2D black-and-white manga artwork. Do not use color. Prefer clear contour lines, large flat black/white shapes, simple readable silhouettes, limited hatching, and limited screentone only when necessary. Avoid dense cross-hatching, over-rendered textures, heavy grey noise, and 3D volume.'
+        ? 'Use clean minimalist 2D black-and-white manga artwork. Do not use color. Prefer clear contour lines, large flat black/white shapes, simple readable silhouettes, and purposeful manga hatching/screentone for tension, impact, shadows, speed, or dramatic emphasis. Hatching is allowed and useful, but it must stay controlled and intentional. Avoid dense cross-hatching everywhere, over-rendered textures, heavy grey noise, and 3D volume.'
         : labelledInput.styleMode === 'color'
-          ? 'Use clean minimalist 2D manga/anime artwork with flat solid colors, simple cel shading, crisp outlines, clear silhouettes, limited palette, and very little texture. Colors should be unified and readable. Avoid realistic lighting, gradients, painterly blending, heavy cross-hatching, dense screentones, 3D modeling, and over-rendered detail.'
-          : 'Default to clean minimalist 2D manga/anime artwork with flat solid colors and simple cel shading unless the user explicitly asks for black-and-white manga. Keep shapes readable, colors unified, outlines crisp, and texture sparse. Do not add heavy hatching, dense screentones, realistic lighting, 3D volume, painterly blending, muddy greys, or noisy detail.',
-      'References may strongly guide pose, composition, characters, and panel structure, but the final rendering must remain flat 2D, simplified, and controlled by this style lock.',
+          ? 'Use clean minimalist 2D manga/anime artwork with flat solid colors, simple cel shading, crisp outlines, clear silhouettes, and a limited readable palette. Colors should be unified and readable. Use hatching sparingly but confidently where it adds tension, impact, motion, or dramatic shadow. Avoid realistic lighting, gradients, painterly blending, dense cross-hatching everywhere, dense screentones, 3D modeling, and over-rendered detail.'
+          : 'Default to clean minimalist 2D manga/anime artwork with flat solid colors and simple cel shading unless the user explicitly asks for black-and-white manga. Keep shapes readable, colors unified, outlines crisp, and texture sparse. Hatching and screentone are allowed when they create tension, impact, speed, or focused shadow, but they must not turn the page into a noisy or over-rendered 3D-looking image.',
+      'References may strongly guide pose, composition, characters, and panel structure, but the final rendering must remain flat 2D, simplified, and controlled by this style lock. Use manga hatching as an expressive tool, not as all-over texture.',
       '',
       'BACKGROUND LOCK:',
       labelledInput.backgroundLevel === 'empty'
