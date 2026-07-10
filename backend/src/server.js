@@ -796,11 +796,11 @@ function buildMangaImagePrompt(input) {
       '',
       'STYLE LOCK:',
       labelledInput.styleMode === 'black-white'
-        ? 'Use clean minimalist 2D black-and-white manga artwork. Do not use color. Prefer clear contour lines, large flat black/white shapes, simple readable silhouettes, and purposeful manga hatching/screentone for tension, impact, shadows, speed, or dramatic emphasis. Hatching is allowed and useful, but it must stay controlled and intentional. Avoid dense cross-hatching everywhere, over-rendered textures, heavy grey noise, and 3D volume.'
+        ? 'Use finished professional black-and-white manga artwork. Do not use color. Use crisp ink, clean black fills, controlled hatching, purposeful screentones, clear line weight hierarchy, flat values, strong silhouettes, and print-ready page readability.'
         : labelledInput.styleMode === 'color'
-          ? 'Use clean minimalist 2D manga/anime artwork with flat solid colors, simple cel shading, crisp outlines, clear silhouettes, and a limited readable palette. Colors should be unified and readable. Use hatching sparingly but confidently where it adds tension, impact, motion, or dramatic shadow. Avoid realistic lighting, gradients, painterly blending, dense cross-hatching everywhere, dense screentones, 3D modeling, and over-rendered detail.'
-          : 'Default to clean minimalist 2D manga/anime artwork with flat solid colors and simple cel shading unless the user explicitly asks for black-and-white manga. Keep shapes readable, colors unified, outlines crisp, and texture sparse. Hatching and screentone are allowed when they create tension, impact, speed, or focused shadow, but they must not turn the page into a noisy or over-rendered 3D-looking image.',
-      'References may strongly guide pose, composition, characters, and panel structure, but the final rendering must remain flat 2D, simplified, and controlled by this style lock. Use manga hatching as an expressive tool, not as all-over texture.',
+          ? 'Use finished original manga artwork in color while preserving crisp ink, readable silhouettes, clear values, and disciplined cel-shaded color.'
+          : 'Use finished original manga artwork. If black and white manga is requested or implied, do not use color. Use crisp ink, clean black fills, flat values, purposeful screentones, controlled hatching, clear line weight hierarchy, and readable silhouettes.',
+      'Do not use photorealism, glossy rendering, painterly shading, muddy greys, random noisy texture, AI-smudge linework, or over-rendered grain unless explicitly requested.',
       '',
       'BACKGROUND LOCK:',
       labelledInput.backgroundLevel === 'empty'
@@ -1089,7 +1089,7 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     referenceImageAnalysisModel: imageAnalysisModel,
     referenceImageAspectGuard: true,
     referenceCopyGuard: false,
-    flatMangaStyleGuard: true,
+    flatMangaStyleGuard: false,
     maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
   });
