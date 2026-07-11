@@ -60,6 +60,9 @@ const imageRequestMaxAttempts = Math.max(
   Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 2)),
 );
 const mangaPageCreditCost = Number(process.env.CREDIT_COST_MANGA_PAGE || 10);
+const characterCardCreditCost = Number(
+  process.env.CREDIT_COST_CHARACTER_CARD || mangaPageCreditCost,
+);
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
@@ -93,7 +96,7 @@ const upload = multer({
 
 app.disable('x-powered-by');
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: '35mb' }));
+app.use(express.json({ limit: '60mb' }));
 
 async function requireAuth(req, res, next) {
   const authorization = req.header('authorization') || '';
@@ -1069,6 +1072,506 @@ async function requestMangaImage(finalPrompt, input, taskType) {
   return requestMangaImageGeneration(finalPrompt, requestedImageSize);
 }
 
+function normalizeCharacterCardReferences(references) {
+  if (!Array.isArray(references)) return [];
+  return references
+    .map((reference) => ({
+      id: cleanText(reference?.id),
+      name: cleanText(reference?.name, 'Reference'),
+      imageDataUrl: cleanImageDataUrl(reference?.imageDataUrl),
+      mimeType: cleanText(reference?.mimeType),
+      description: cleanText(reference?.description),
+    }))
+    .filter((reference) => reference.imageDataUrl)
+    .slice(0, 4);
+}
+
+function normalizeCharacterCardInput(body) {
+  const requestedImageSize = normalizeMangaImageSize(
+    body?.size || mangaImageSizeFromAspectRatio(body?.aspectRatio),
+    '1536x1024',
+  );
+
+  return {
+    prompt: cleanText(body?.prompt),
+    identityImageDataUrl: cleanImageDataUrl(
+      body?.identityImageDataUrl || body?.characterImageDataUrl || body?.baseImageDataUrl,
+    ),
+    identityReferenceName: cleanText(body?.identityReferenceName, 'Image A'),
+    styleId: cleanText(body?.styleId, 'realistic'),
+    styleName: cleanText(body?.styleName, 'Selected style'),
+    styleDescription: cleanText(body?.styleDescription),
+    styleImageDataUrl: cleanImageDataUrl(body?.styleImageDataUrl),
+    structureImageDataUrl: cleanImageDataUrl(
+      body?.structureImageDataUrl || body?.cardStructureImageDataUrl,
+    ),
+    references: normalizeCharacterCardReferences(body?.references),
+    aspectRatio: normalizeMangaAspectRatio(body?.aspectRatio, requestedImageSize),
+    size: requestedImageSize,
+  };
+}
+
+function formatCharacterCardReferences(references) {
+  if (!references.length) return '- none provided';
+  return references
+    .map((reference, index) =>
+      [
+        `- Extra reference ${index + 1}: ${reference.name}`,
+        reference.description ? `  User role: ${reference.description}` : '',
+        '  Use only the declared utility; do not replace Image A identity.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+    .join('\n');
+}
+
+function buildRealisticCharacterCardPrompt(input) {
+  const userNotes = input.prompt || 'No extra user notes. Use Image A as the authoritative identity.';
+
+  return [
+    'You are generating a CHARACTER CARD / CHARACTER SHEET of a provided character.',
+    '',
+    'The final result must be a full STYLE CONVERSION and CHARACTER SHEET generation.',
+    '',
+    '--------------------------------------------------',
+    '1. IMAGE ROLES',
+    '--------------------------------------------------',
+    '',
+    'Image A is the mandatory CHARACTER IDENTITY REFERENCE.',
+    '',
+    'It defines:',
+    '- who the character is;',
+    '- the face identity;',
+    '- the hairstyle identity;',
+    '- the eye shape identity;',
+    '- the hair color logic if visible;',
+    '- the outfit identity if relevant;',
+    '- the silhouette and overall character presence;',
+    '- the apparent age unless the user explicitly requests otherwise.',
+    '',
+    'Image B, if provided, is the CHARACTER CARD STRUCTURE REFERENCE.',
+    '',
+    'It defines:',
+    '- how the character sheet must be organized;',
+    '- the layout logic;',
+    '- the arrangement of full-body views;',
+    '- the arrangement of expression portraits;',
+    '- the spacing and overall presentation logic.',
+    '',
+    'Image C, if provided, is the TARGET STYLE REFERENCE.',
+    '',
+    'It defines:',
+    '- linework finish;',
+    '- realistic manga eye rendering;',
+    '- hair rendering density;',
+    '- monochrome value treatment;',
+    '- facial construction and polish level.',
+    '',
+    'Important:',
+    'Image A defines WHO the character is.',
+    'Image B defines HOW the card must be organized.',
+    'Image C defines HOW the selected style should feel.',
+    'Do not copy the character from Image B or Image C.',
+    '',
+    '--------------------------------------------------',
+    '2. CORE OBJECTIVE',
+    '--------------------------------------------------',
+    '',
+    'Create a realistic black-and-white character card of the character shown in Image A.',
+    '',
+    'The final result must:',
+    '- preserve the identity of Image A;',
+    '- replace the original source style with a realistic target style;',
+    '- present the character in a clean character card / character sheet format;',
+    '- show the same character under multiple angles;',
+    '- show the same character with multiple expressions;',
+    '- maintain strict consistency across all views.',
+    '',
+    'This is NOT a request to preserve the original art style.',
+    'This is a request to preserve the character identity and convert the rendering style.',
+    '',
+    '--------------------------------------------------',
+    '3. IDENTITY / STYLE SEPARATION RULE',
+    '--------------------------------------------------',
+    '',
+    'When Image A is provided, separate IDENTITY from STYLE.',
+    '',
+    'Preserve from Image A:',
+    '- face identity;',
+    '- hairstyle identity;',
+    '- eye shape identity;',
+    '- hair color logic if relevant;',
+    '- outfit identity if relevant;',
+    '- silhouette;',
+    '- age impression;',
+    '- overall recognizable character presence.',
+    '',
+    'Do NOT preserve from Image A:',
+    '- the original rendering style;',
+    '- the original line style;',
+    '- the original shading style;',
+    '- the original stylization level;',
+    '- the original source-style proportions if they are style-dependent.',
+    '',
+    'Instead:',
+    'fully redraw the same character in the target REALISTIC STYLE defined below.',
+    '',
+    'Important:',
+    'The reference image defines WHO the character is.',
+    'It does NOT define the final rendering style.',
+    '',
+    'The final result must clearly read as:',
+    'the same character, but fully redrawn in a realistic style.',
+    '',
+    '--------------------------------------------------',
+    '4. TARGET STYLE: REALISTIC',
+    '--------------------------------------------------',
+    '',
+    'The target style is a refined semi-realistic black-and-white manga / manhwa style.',
+    '',
+    'It must NOT be photorealistic.',
+    'It must remain clearly illustrated and manga-based.',
+    '',
+    'The style must be:',
+    '- more realistic than standard anime;',
+    '- more anatomically grounded than simplified manga;',
+    '- more mature and refined than a flat modern manga style;',
+    '- highly polished;',
+    '- clean and elegant.',
+    '',
+    'The final rendering must include:',
+    '',
+    'FACE:',
+    '- semi-realistic facial construction;',
+    '- believable facial planes;',
+    '- subtle cheek, jaw, chin, and nose bridge structure;',
+    '- refined but not exaggerated realism;',
+    '- mature and visually credible proportions.',
+    '',
+    'EYES:',
+    '- detailed manga eyes;',
+    '- expressive and elegant;',
+    '- clearly illustrated, not photographic;',
+    '- defined upper eyelids;',
+    '- readable iris and pupil structure;',
+    '- subtle internal eye detail;',
+    '- delicate lower eyelid treatment;',
+    '- rich but controlled eye rendering.',
+    '',
+    'Important eye rules:',
+    '- the eyes must remain manga-based;',
+    '- they must not become oversized old-school anime eyes;',
+    '- they must not become flat simplified manga eyes;',
+    '- they must not become realistic photographic human eyes.',
+    '',
+    'NOSE:',
+    '- more realistic than simplified anime;',
+    '- delicate and properly integrated into the face;',
+    '- subtle bridge and nostril information;',
+    '- refined shading;',
+    '- elegant and understated.',
+    '',
+    'MOUTH:',
+    '- natural and controlled;',
+    '- thin to medium line treatment;',
+    '- understated and believable;',
+    '- emotionally precise.',
+    '',
+    'HAIR:',
+    '- preserve hairstyle identity;',
+    '- preserve black hair if the character has black hair;',
+    '- use grouped strands and layered locks;',
+    '- rich but controlled detail;',
+    '- dimensional and elegant hair rendering;',
+    '- not flat anime blocks;',
+    '- not photographic individual-hair realism.',
+    '',
+    'ANATOMY:',
+    '- slender, believable, elegant anatomy;',
+    '- coherent shoulders, neck, torso, and limbs;',
+    '- stable body proportions across all angles;',
+    '- readable hands;',
+    '- mature and well-constructed body logic.',
+    '',
+    'CLOTHING:',
+    '- preserve outfit identity if relevant;',
+    '- clothing must be consistent across all views;',
+    '- clothing must be structurally believable;',
+    '- folds must be controlled and elegant;',
+    '- values must be clean and readable.',
+    '',
+    'If the desired outfit look is clean:',
+    '- use plain, unified value masses;',
+    '- minimize grain;',
+    '- avoid dirty texture noise on the clothes;',
+    '- avoid unnecessary visual clutter.',
+    '',
+    'LINEART:',
+    '- clean;',
+    '- elegant;',
+    '- polished;',
+    '- readable;',
+    '- controlled line weight variation.',
+    '',
+    'SHADING:',
+    '- black-and-white only unless otherwise requested;',
+    '- refined grayscale or screentone-like rendering;',
+    '- controlled shadows;',
+    '- subtle volume modeling;',
+    '- clear value hierarchy;',
+    '- polished monochrome finish.',
+    '',
+    'BACKGROUND:',
+    '- plain, minimal, or very clean;',
+    '- never distracting;',
+    '- appropriate for a character reference sheet.',
+    '',
+    '--------------------------------------------------',
+    '5. CHARACTER CARD FORMAT',
+    '--------------------------------------------------',
+    '',
+    'The final output must be a CHARACTER CARD / CHARACTER SHEET.',
+    '',
+    'If Image B is provided, follow its structure strictly.',
+    '',
+    'If no structure reference is provided, use the following default structure:',
+    '',
+    '- 3:2 format.',
+    '- Clean white or very light neutral background.',
+    '- Top row: three full-body views of the same character:',
+    '  1. front view',
+    '  2. back view',
+    '  3. side/profile view',
+    '- Bottom row: five bust or head-and-shoulders portraits of the same character with different expressions:',
+    '  1. content / lightly pleased',
+    '  2. very happy',
+    '  3. neutral',
+    '  4. angry',
+    '  5. sad',
+    '',
+    'The card must be:',
+    '- clean;',
+    '- balanced;',
+    '- organized;',
+    '- easy to read;',
+    '- visually coherent.',
+    '',
+    '--------------------------------------------------',
+    '6. CONSISTENCY RULES',
+    '--------------------------------------------------',
+    '',
+    'All views and portraits must clearly depict the SAME character.',
+    '',
+    'This consistency is mandatory across:',
+    '- face identity;',
+    '- hairstyle;',
+    '- age impression;',
+    '- body build;',
+    '- outfit;',
+    '- proportions;',
+    '- style rendering.',
+    '',
+    'Front view:',
+    '- must clearly show the full outfit from the front;',
+    '- must preserve identity and silhouette.',
+    '',
+    'Back view:',
+    '- must clearly show the hairstyle from the back;',
+    '- must clearly show the outfit from the back;',
+    '- must maintain exact same body proportions.',
+    '',
+    'Side/profile view:',
+    '- must clearly show the facial profile;',
+    '- must preserve hairstyle silhouette;',
+    '- must preserve outfit profile construction.',
+    '',
+    'Expression portraits:',
+    '- must remain fully recognizable as the same character;',
+    '- only the expression should change;',
+    '- identity must remain locked.',
+    '',
+    'Expression logic:',
+    '- content / lightly pleased = restrained soft smile;',
+    '- very happy = open cheerful smile;',
+    '- neutral = calm, composed, serious;',
+    '- angry = tenser brows, sharper gaze, firmer mouth;',
+    '- sad = softer eyes, subdued mouth, slight emotional heaviness.',
+    '',
+    'Do not let the expressions distort the identity.',
+    '',
+    '--------------------------------------------------',
+    '7. STRUCTURE LOCK',
+    '--------------------------------------------------',
+    '',
+    'If Image B is provided:',
+    '- preserve its organizational logic;',
+    '- preserve its top/bottom arrangement;',
+    '- preserve its general composition system;',
+    '- preserve its readability and card-like presentation.',
+    '',
+    'Do NOT copy the character shown in Image B.',
+    'Only use Image B for structure and layout.',
+    '',
+    'If Image B is not provided:',
+    '- use the default structure described above.',
+    '',
+    '--------------------------------------------------',
+    '8. STYLE CONVERSION LOCK',
+    '--------------------------------------------------',
+    '',
+    'This request requires STYLE CONVERSION.',
+    '',
+    'The final image must NOT look like:',
+    '- the original source style placed onto a sheet;',
+    '- the original art style with minor modifications;',
+    '- the source drawing simply copied.',
+    '',
+    'Instead, the final image must look like:',
+    '- the same character identity,',
+    '- fully redesigned and redrawn,',
+    '- in the target realistic black-and-white manga / manhwa character-card style.',
+    '',
+    'Mandatory rule:',
+    'Preserve the identity.',
+    'Replace the style.',
+    '',
+    'The original source style must disappear.',
+    'The realistic target style must dominate the entire final sheet.',
+    '',
+    '--------------------------------------------------',
+    '9. RESTRICTIONS',
+    '--------------------------------------------------',
+    '',
+    'Do not:',
+    '- preserve the original source style;',
+    '- make the result photorealistic;',
+    '- make the face too flat or too anime-simplified;',
+    '- make the eyes too large in a 90s anime way;',
+    '- make the nose tiny and symbolic;',
+    '- generate different-looking versions of the character across the sheet;',
+    '- change the outfit design between views;',
+    '- add noisy texture or grain on clothes if a clean result is expected;',
+    '- add decorative background elements;',
+    '- add extra props unless requested;',
+    '- add extra character views unless requested.',
+    '',
+    'Very important:',
+    'Do not add text unless explicitly requested.',
+    'By default:',
+    '- no title;',
+    '- no labels;',
+    '- no captions;',
+    '- no measurements;',
+    '- no annotations;',
+    '- no notes;',
+    '- no decorative typography.',
+    '',
+    '--------------------------------------------------',
+    '10. USER NOTES AND EXTRA REFERENCES',
+    '--------------------------------------------------',
+    '',
+    'User notes:',
+    userNotes,
+    '',
+    'Extra references:',
+    formatCharacterCardReferences(input.references),
+    '',
+    'Extra references may define outfit details, accessories, or visual notes only when their description says so.',
+    'They must never override Image A identity, Image B structure, or the selected realistic style.',
+    '',
+    '--------------------------------------------------',
+    '11. FINAL MANDATORY INSTRUCTION',
+    '--------------------------------------------------',
+    '',
+    'Generate a complete 3:2 realistic black-and-white character card of the same character shown in Image A.',
+    '',
+    'Preserve from Image A:',
+    '- the identity;',
+    '- the face;',
+    '- the hairstyle;',
+    '- the eye shape;',
+    '- the character presence;',
+    '- the outfit identity if relevant.',
+    '',
+    'Do NOT preserve the original rendering style of Image A.',
+    '',
+    'Fully convert the character into a refined semi-realistic manga / manhwa style, with:',
+    '- realistic facial construction;',
+    '- detailed manga eyes;',
+    '- elegant anatomy;',
+    '- refined lineart;',
+    '- clean monochrome shading;',
+    '- mature and polished presentation.',
+    '',
+    'The final character card must show:',
+    '- full-body front view;',
+    '- full-body back view;',
+    '- full-body side/profile view;',
+    '- and five expression portraits:',
+    '  content / lightly pleased,',
+    '  very happy,',
+    '  neutral,',
+    '  angry,',
+    '  sad.',
+    '',
+    'If Image B is provided, organize the card according to Image B.',
+    'If Image B is not provided, use the default clean character-sheet structure.',
+    '',
+    'The final result must clearly read as:',
+    'the same input character, fully redrawn in a realistic style, and presented as a clean professional character card.',
+  ].join('\n');
+}
+
+function buildGenericCharacterCardPrompt(input) {
+  return [
+    'Generate one 3:2 character card / character sheet from the provided character identity image.',
+    '',
+    'IMAGE ROLES:',
+    '- Image A defines the character identity: face, hairstyle, eyes, outfit, silhouette, age impression, and overall presence.',
+    '- Image B, if provided, defines the character-card structure and layout only.',
+    '- Image C, if provided, defines the selected rendering style only.',
+    '',
+    `Selected style: ${input.styleName}${input.styleDescription ? ` - ${input.styleDescription}` : ''}.`,
+    input.prompt ? `User notes: ${input.prompt}` : 'User notes: none.',
+    '',
+    'Preserve Image A identity while replacing the original source style with the selected target style.',
+    'Show the same character in front, back, and side/profile full-body views.',
+    'Show five head-and-shoulders portraits: content / lightly pleased, very happy, neutral, angry, sad.',
+    'Use a clean white or very light background, no labels, no captions, no measurements, no decorative typography.',
+    'Do not copy the character from Image B or Image C. They only define structure/style.',
+    '',
+    'Extra references:',
+    formatCharacterCardReferences(input.references),
+  ].join('\n');
+}
+
+function buildCharacterCardPrompt(input) {
+  if (input.styleId.toLowerCase() === 'realistic') {
+    return buildRealisticCharacterCardPrompt(input);
+  }
+  return buildGenericCharacterCardPrompt(input);
+}
+
+function buildCharacterCardImageInputs(input) {
+  const images = [];
+  const addImage = (dataUrl, filename) => {
+    if (!dataUrl || images.length >= 8) return;
+    const image = dataUrlToImageBlob(dataUrl, filename);
+    if (image) images.push(image);
+  };
+
+  addImage(input.identityImageDataUrl, 'image-a-character-identity');
+  addImage(input.structureImageDataUrl, 'image-b-card-structure');
+  addImage(input.styleImageDataUrl, 'image-c-style-reference');
+
+  for (const reference of input.references) {
+    addImage(reference.imageDataUrl, reference.id || reference.name || 'extra-reference');
+  }
+
+  return images;
+}
+
 app.get('/health', (_, res) => {
   res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
 });
@@ -1092,6 +1595,9 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     flatMangaStyleGuard: false,
     maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
+    characterGenerationEndpoint: '/api/character/generate',
+    characterCardStyles: ['realistic'],
+    characterCardCreditCost,
   });
 });
 
@@ -1177,6 +1683,48 @@ app.post('/summarize', requireAuth, async (req, res) => {
     console.error('Summary failed:', error);
     res.status(500).json({
       error: 'Summary failed.',
+      details: safeOpenAiError(error),
+    });
+  }
+});
+
+app.post('/api/character/generate', requireAuth, async (req, res) => {
+  if (!mangaForgeEnabled) {
+    return res.status(403).json({ error: 'Manga Forge generation is disabled.' });
+  }
+
+  const input = normalizeCharacterCardInput(req.body);
+
+  if (!input.identityImageDataUrl) {
+    return res.status(400).json({
+      error: 'Missing character identity image. Provide identityImageDataUrl as Image A.',
+    });
+  }
+
+  try {
+    const imageInputs = buildCharacterCardImageInputs(input);
+    if (!imageInputs.length) {
+      return res.status(400).json({ error: 'No valid character reference image was provided.' });
+    }
+
+    const finalPrompt = buildCharacterCardPrompt(input);
+    const imageDataUrl = await requestMangaImageEdit(finalPrompt, imageInputs, input.size);
+
+    res.json({
+      imageDataUrl,
+      imageUrl: imageDataUrl,
+      finalPrompt,
+      taskType: 'character_card_generation',
+      model: imageModel,
+      size: input.size,
+      quality: imageQuality,
+      creditsUsed: characterCardCreditCost,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Character card generation failed:', error);
+    res.status(500).json({
+      error: 'Character card generation failed.',
       details: safeOpenAiError(error),
     });
   }
