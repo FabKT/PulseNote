@@ -63,6 +63,9 @@ const mangaPageCreditCost = Number(process.env.CREDIT_COST_MANGA_PAGE || 10);
 const characterCardCreditCost = Number(
   process.env.CREDIT_COST_CHARACTER_CARD || mangaPageCreditCost,
 );
+const sketchFinalCreditCost = Number(
+  process.env.CREDIT_COST_SKETCH_FINAL || mangaPageCreditCost,
+);
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
@@ -3054,6 +3057,232 @@ function buildCharacterCardImageInputs(input) {
   return images;
 }
 
+function normalizeSketchFinalReferences(references) {
+  if (!Array.isArray(references)) return [];
+  return references
+    .map((reference) => ({
+      id: cleanText(reference?.id),
+      name: cleanText(reference?.name, 'Element reference'),
+      imageDataUrl: cleanImageDataUrl(reference?.imageDataUrl),
+      description: cleanText(reference?.description || reference?.notes),
+    }))
+    .filter((reference) => reference.imageDataUrl)
+    .slice(0, 6);
+}
+
+function normalizeSketchFinalInput(body) {
+  const requestedImageSize = normalizeMangaImageSize(
+    body?.size || mangaImageSizeFromAspectRatio(body?.aspectRatio),
+    imageSize,
+  );
+
+  return {
+    prompt: cleanText(body?.prompt || body?.notes),
+    sketchImageDataUrl: cleanImageDataUrl(
+      body?.sketchImageDataUrl || body?.baseImageDataUrl || body?.imageDataUrl,
+    ),
+    styleImageDataUrl: cleanImageDataUrl(body?.styleImageDataUrl || body?.finishedStyleImageDataUrl),
+    styleId: cleanText(body?.styleId, 'custom'),
+    styleName: cleanText(body?.styleName, 'Finished style reference'),
+    styleDescription: cleanText(body?.styleDescription),
+    elementReferences: normalizeSketchFinalReferences(
+      body?.elementReferences || body?.references || body?.referenceImages,
+    ),
+    size: requestedImageSize,
+  };
+}
+
+function formatSketchFinalReferences(references) {
+  if (!references.length) return '- none provided';
+  return references
+    .map((reference, index) => {
+      const label = `Image ${String.fromCharCode(67 + index)}`;
+      return [
+        `- ${label}: ${reference.name}`,
+        reference.description ? `  User role: ${reference.description}` : '',
+        '  This reference defines the identity, design, material, outfit, face, prop, or environment detail of an element already present in Image A.',
+        '  It must not change pose, framing, hand placement, camera angle, bubble placement, panel logic, or spatial relationships from Image A.',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    })
+    .join('\n');
+}
+
+function buildSketchFinalPrompt(input) {
+  return [
+    'SKETCH TO FINISHED IMAGE BACKEND PROMPT',
+    'WITH MANDATORY STYLE REFERENCE',
+    '',
+    '1. IMAGE ROLES',
+    '',
+    'Image A is the sketch reference.',
+    'It defines exactly:',
+    '- composition;',
+    '- framing;',
+    '- camera angle;',
+    '- pose;',
+    '- expression;',
+    '- hand placement;',
+    '- body orientation;',
+    '- speech bubble placement;',
+    '- panel logic;',
+    '- spatial relationships.',
+    '',
+    'Image B is the finished-style reference.',
+    'It defines exactly:',
+    '- final rendering style;',
+    '- lineart;',
+    '- face rendering;',
+    '- eye rendering;',
+    '- hair rendering;',
+    '- shading;',
+    '- texture level;',
+    '- color/value logic;',
+    '- polish level.',
+    '',
+    'Image C and following, if provided, are element / character identity references.',
+    'They define:',
+    '- face identity;',
+    '- hairstyle identity;',
+    '- outfit identity;',
+    '- object identity;',
+    '- background identity;',
+    '- material, value, and design details;',
+    '- character or element presence.',
+    '',
+    'Image A defines WHAT is drawn and WHERE everything is placed.',
+    'Image B defines HOW the final image is rendered.',
+    'Image C and following define WHO or WHAT specific sketched elements are, if provided.',
+    '',
+    'Do not confuse these roles.',
+    '',
+    '2. CORE RULE',
+    '',
+    'Image A controls WHAT is drawn and WHERE everything is placed.',
+    'Image B controls HOW the final image is rendered.',
+    'Image C and following control WHO/WHAT the matching sketched elements are, if provided.',
+    '',
+    'Do not let Image B change the composition.',
+    'Do not let Image C or later references change the pose.',
+    'Do not let any reference image invent a new scene.',
+    '',
+    '3. FINAL OBJECTIVE',
+    '',
+    'Create a polished finished version of Image A.',
+    '',
+    'The final image must:',
+    '- preserve the sketch composition;',
+    '- preserve the pose;',
+    '- preserve the expression;',
+    '- preserve the hand placement;',
+    '- preserve the camera angle;',
+    '- preserve the bubble placement if present;',
+    '- preserve panel logic if present;',
+    '- preserve all spatial relationships;',
+    '- render everything in the finished style of Image B;',
+    '- preserve the identity of matching elements from Image C and following if provided.',
+    '',
+    '4. STRICT SKETCH LOCK',
+    '',
+    'The sketch is the blueprint.',
+    '',
+    'Do not:',
+    '- change the pose;',
+    '- change the expression;',
+    '- change the framing;',
+    '- change the camera angle;',
+    '- move the hands;',
+    '- move the bubbles;',
+    '- change panel logic;',
+    '- add new characters;',
+    '- remove important elements;',
+    '- reinterpret the scene.',
+    '',
+    '5. STYLE REFERENCE LOCK',
+    '',
+    'Image B is mandatory.',
+    `Selected style name: ${input.styleName}.`,
+    input.styleDescription ? `Selected style description: ${input.styleDescription}.` : '',
+    '',
+    'The final image must visually match Image B in:',
+    '- line quality;',
+    '- finishing level;',
+    '- eye style;',
+    '- hair rendering;',
+    '- shading logic;',
+    '- black/white/gray or color treatment;',
+    '- texture level;',
+    '- overall visual finish.',
+    '',
+    'Do not use a generic style.',
+    'Do not ignore Image B.',
+    'Do not produce a result that looks unrelated to Image B.',
+    '',
+    '6. ELEMENT REFERENCE LOCK',
+    '',
+    'Use each element reference only for the element already present in the sketch.',
+    'If a reference shows a character, preserve that character identity only where the sketch already contains that character.',
+    'If a reference shows an object, outfit, background, or prop, preserve its design only where the sketch already contains the matching element.',
+    'Never let an element reference replace Image A composition.',
+    '',
+    'Element references:',
+    formatSketchFinalReferences(input.elementReferences),
+    '',
+    '7. ANATOMY CLEANUP RULE',
+    '',
+    'Correct rough anatomy only when necessary.',
+    '',
+    'Allowed:',
+    '- clean proportions;',
+    '- clarify fingers;',
+    '- refine face;',
+    '- clean hair;',
+    '- finish clothes;',
+    '- remove construction lines;',
+    '- clarify perspective while keeping the same camera and layout.',
+    '',
+    'Forbidden:',
+    '- changing the gesture;',
+    '- moving hands;',
+    '- changing the body direction;',
+    '- changing the expression;',
+    '- changing the scene.',
+    '',
+    input.prompt
+      ? ['8. USER INSTRUCTIONS', '', input.prompt].join('\n')
+      : '',
+    '',
+    '9. FINAL INSTRUCTION',
+    '',
+    'Generate the same scene as Image A, faithfully finished in the style of Image B, using Image C and following only for matching element identity if provided.',
+    '',
+    'The result must look like:',
+    'the sketch from Image A was professionally completed using the visual style of Image B.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function buildSketchFinalImageInputs(input) {
+  const images = [];
+  const addImage = (dataUrl, filename) => {
+    if (!dataUrl || images.length >= 8) return;
+    const image = dataUrlToImageBlob(dataUrl, filename);
+    if (image) images.push(image);
+  };
+
+  addImage(input.sketchImageDataUrl, 'image-a-sketch-reference');
+  addImage(input.styleImageDataUrl, 'image-b-finished-style-reference');
+
+  for (const [index, reference] of input.elementReferences.entries()) {
+    const label = `image-${String.fromCharCode(99 + index)}-element-reference`;
+    addImage(reference.imageDataUrl, reference.id || label);
+  }
+
+  return images;
+}
+
 app.get('/health', (_, res) => {
   res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
 });
@@ -3078,8 +3307,10 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
     characterGenerationEndpoint: '/api/character/generate',
+    sketchFinalGenerationEndpoint: '/api/sketch-final/generate',
     characterCardStyles: ['realistic', 'retro90', 'classic', 'current'],
     characterCardCreditCost,
+    sketchFinalCreditCost,
   });
 });
 
@@ -3165,6 +3396,56 @@ app.post('/summarize', requireAuth, async (req, res) => {
     console.error('Summary failed:', error);
     res.status(500).json({
       error: 'Summary failed.',
+      details: safeOpenAiError(error),
+    });
+  }
+});
+
+app.post('/api/sketch-final/generate', requireAuth, async (req, res) => {
+  if (!mangaForgeEnabled) {
+    return res.status(403).json({ error: 'Manga Forge generation is disabled.' });
+  }
+
+  const input = normalizeSketchFinalInput(req.body);
+
+  if (!input.sketchImageDataUrl) {
+    return res.status(400).json({
+      error: 'Missing sketch image. Provide sketchImageDataUrl as Image A.',
+    });
+  }
+
+  if (!input.styleImageDataUrl) {
+    return res.status(400).json({
+      error: 'Missing finished-style reference image. Provide styleImageDataUrl as Image B.',
+    });
+  }
+
+  try {
+    const imageInputs = buildSketchFinalImageInputs(input);
+    if (imageInputs.length < 2) {
+      return res.status(400).json({
+        error: 'Sketch-to-final requires both Image A sketch and Image B style reference.',
+      });
+    }
+
+    const finalPrompt = buildSketchFinalPrompt(input);
+    const imageDataUrl = await requestMangaImageEdit(finalPrompt, imageInputs, input.size);
+
+    res.json({
+      imageDataUrl,
+      imageUrl: imageDataUrl,
+      finalPrompt,
+      taskType: 'sketch_to_final',
+      model: imageModel,
+      size: input.size,
+      quality: imageQuality,
+      creditsUsed: sketchFinalCreditCost,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Sketch-to-final generation failed:', error);
+    res.status(500).json({
+      error: 'Sketch-to-final generation failed.',
       details: safeOpenAiError(error),
     });
   }
