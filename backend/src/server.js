@@ -72,6 +72,7 @@ const sketchFinalCreditCost = Number(
   process.env.CREDIT_COST_SKETCH_FINAL || mangaPageCreditCost,
 );
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
+const maxMangaReferenceImages = 8;
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 
@@ -375,6 +376,64 @@ function assignImageLabels(input, isModification) {
   };
 }
 
+function mangaAssetGroupKey(asset) {
+  if (asset.role === 'Character') {
+    return `character:${asset.characterId || asset.characterName || asset.name || asset.id}`;
+  }
+  return `${asset.role}:${asset.id || asset.name}`;
+}
+
+function pushUniqueMangaAsset(target, seenIds, asset, limit) {
+  if (!asset?.imageDataUrl) return false;
+  if (target.length >= limit) return false;
+  const key = asset.id || `${asset.role}:${asset.name}:${asset.imageLabel || target.length}`;
+  if (seenIds.has(key)) return false;
+  seenIds.add(key);
+  target.push(asset);
+  return true;
+}
+
+function selectMangaVisualAssets(input, limit = maxMangaReferenceImages, options = {}) {
+  if (limit <= 0) return [];
+
+  const assets = input.selectedAssets.filter(
+    (asset) =>
+      asset.imageDataUrl &&
+      (options.includeAnalysisOnly || shouldAttachMangaAssetImage(input, asset)),
+  );
+  const selected = [];
+  const seenIds = new Set();
+
+  const pushRole = (roles, maxPerGroup = Infinity) => {
+    const roleSet = new Set(Array.isArray(roles) ? roles : [roles]);
+    const groupCounts = new Map();
+    for (const asset of assets) {
+      if (!roleSet.has(asset.role)) continue;
+      const groupKey = mangaAssetGroupKey(asset);
+      const count = groupCounts.get(groupKey) || 0;
+      if (count >= maxPerGroup) continue;
+      if (pushUniqueMangaAsset(selected, seenIds, asset, limit)) {
+        groupCounts.set(groupKey, count + 1);
+      }
+      if (selected.length >= limit) return;
+    }
+  };
+
+  pushRole(['Storyboard', 'Generated Page', 'Target'], 1);
+  pushRole('Character', 1);
+  pushRole('Pose', 1);
+  pushRole('Style', 1);
+  pushRole(['Background', 'Object'], 1);
+  pushRole('Character', 1);
+  pushRole(['Inspiration', 'Background', 'Object', 'Pose', 'Style'], 2);
+
+  for (const asset of assets) {
+    if (pushUniqueMangaAsset(selected, seenIds, asset, limit) && selected.length >= limit) break;
+  }
+
+  return selected;
+}
+
 function extractResponseOutputText(payload) {
   if (typeof payload?.output_text === 'string') return payload.output_text.trim();
 
@@ -540,11 +599,15 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
     });
   }
 
-  let imageCount = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
-  for (const asset of labelledInput.selectedAssets) {
+  const targetImageCount =
+    labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
+  const visualAssets = selectMangaVisualAssets(
+    labelledInput,
+    maxMangaReferenceImages - targetImageCount,
+    { includeAnalysisOnly: true },
+  );
+  for (const asset of visualAssets) {
     if (!asset.imageDataUrl) continue;
-    if (imageCount >= 8) break;
-    imageCount += 1;
     content.push({
       type: 'input_text',
       text: [
@@ -571,9 +634,9 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
 
 function countReferenceImages(labelledInput) {
   let count = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
-  for (const asset of labelledInput.selectedAssets) {
-    if (asset.imageDataUrl && count < 8) count += 1;
-  }
+  count += selectMangaVisualAssets(labelledInput, maxMangaReferenceImages - count, {
+    includeAnalysisOnly: true,
+  }).length;
   return count;
 }
 
@@ -1275,12 +1338,12 @@ function buildMangaImageInputs(input, taskType) {
     if (target) images.push(target);
   }
 
-  for (const asset of input.selectedAssets) {
+  const remainingSlots = Math.max(0, maxMangaReferenceImages - images.length);
+  for (const asset of selectMangaVisualAssets(input, remainingSlots)) {
     if (!asset.imageDataUrl) continue;
-    if (!shouldAttachMangaAssetImage(input, asset)) continue;
     const image = dataUrlToImageBlob(asset.imageDataUrl, asset.id || asset.name);
     if (image) images.push(image);
-    if (images.length >= 8) break;
+    if (images.length >= maxMangaReferenceImages) break;
   }
 
   return images;
