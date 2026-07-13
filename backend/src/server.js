@@ -55,6 +55,11 @@ const imageEditTimeoutMs = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 540000);
 const imageAnalysisEnabled = process.env.IMAGE_ANALYSIS_ENABLED !== 'false';
 const imageAnalysisTimeoutMs = Number(process.env.IMAGE_ANALYSIS_TIMEOUT_MS || 120000);
 const referenceAnalysisCacheLimit = Number(process.env.REFERENCE_ANALYSIS_CACHE_LIMIT || 160);
+const openAIImagePromptMaxLength = 32000;
+const mangaImagePromptTargetLength = Math.min(
+  openAIImagePromptMaxLength - 500,
+  Math.max(12000, Number(process.env.MANGA_IMAGE_PROMPT_TARGET_LENGTH || 31500)),
+);
 const imageRequestMaxAttempts = Math.max(
   1,
   Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 2)),
@@ -638,6 +643,222 @@ function mangaTaskLabel(taskType) {
   return labels[taskType] || labels.free_creation_with_references;
 }
 
+function joinPromptLines(lines) {
+  return lines.filter((line) => line !== '').join('\n');
+}
+
+function compactMiddleText(value, maxLength) {
+  const text = cleanText(value);
+  if (!maxLength || maxLength <= 0 || text.length <= maxLength) return text;
+  if (maxLength < 200) return text.slice(0, maxLength).trim();
+  const marker = '\n[Text condensed only to stay under the OpenAI image prompt size limit. Preserve all explicit requirements, roles, locks, identities, and surrounding context.]\n';
+  const available = Math.max(0, maxLength - marker.length);
+  const headLength = Math.ceil(available * 0.68);
+  const tailLength = Math.max(0, available - headLength);
+  const tail = tailLength > 0 ? text.slice(-tailLength).trim() : '';
+  return `${text.slice(0, headLength).trim()}${marker}${tail}`;
+}
+
+function compactPromptList(items, fallback, maxLength) {
+  return compactMiddleText(formatPromptList(items, fallback), maxLength);
+}
+
+function buildCompactMangaImagePrompt(context, maxLength = mangaImagePromptTargetLength) {
+  const {
+    taskType,
+    isModification,
+    labelledInput,
+    inventory,
+    characterNames,
+    userRequest,
+    canvasFormatLine,
+    objectiveLine,
+    panelGeometryLine,
+    panelLines,
+    imageRoleLines,
+  } = context;
+
+  const build = (budgets) =>
+    joinPromptLines([
+      'COMPACT BACKEND PLAN MODE:',
+      'The complete manga generation plan exceeded the OpenAI image prompt size limit. This compact version preserves the same hierarchy, locks, and quality requirements with less repetition.',
+      '',
+      'OBJECTIVE:',
+      objectiveLine,
+      '',
+      'CANVAS FORMAT LOCK:',
+      canvasFormatLine,
+      '',
+      'USER REQUEST - HIGHEST PRIORITY:',
+      compactMiddleText(userRequest, budgets.userRequest),
+      '',
+      'CHARACTER PROFILES:',
+      compactMiddleText(
+        formatCharacterList(labelledInput.characters, '- no explicit character profile provided'),
+        budgets.characters,
+      ),
+      '',
+      'PROVIDED IMAGE ROLES:',
+      labelledInput.targetImageLabel
+        ? `- ${labelledInput.targetImageLabel}: current generated page / target image to modify. Preserve composition, panel structure, successful elements, style, and unchanged details.`
+        : '- no target image provided',
+      compactMiddleText(
+        imageRoleLines.length ? imageRoleLines.join('\n') : '- no imported image references selected',
+        budgets.imageRoles,
+      ),
+      '',
+      'REFERENCE IMAGE ANALYSIS - SELF-CONTAINED FACTS:',
+      compactMiddleText(
+        labelledInput.referenceAnalysisText ||
+          '- no automatic visual reference analysis was produced for this request',
+        budgets.referenceAnalysis,
+      ),
+      '',
+      'REFERENCE HIERARCHY AND ROLE LOCK:',
+      'Resolve conflicts in this order: target/current image for edits > storyboard/structure > character identity > pose > inspiration > style > free interpretation.',
+      'Each image influences only its assigned role: character=identity; storyboard/layout=panel geometry/framing/action order; pose=body mechanics/orientation; style=rendering only; inspiration=mood/impact only; target=preserve/edit current image.',
+      'Never let style or inspiration override identity, panel structure, role assignment, dialogue, pose locks, or the user request.',
+      '',
+      'IMAGE ROLE INVENTORY:',
+      `Characters:\n${compactPromptList(inventory.identityRefs, '- none selected', budgets.inventory)}`,
+      `Structure:\n${compactPromptList(
+        inventory.structureRefs,
+        '- inferred from prompt/workspace',
+        budgets.inventory,
+      )}`,
+      `Pose:\n${compactPromptList(inventory.postureRefs, '- none selected', budgets.inventory)}`,
+      `Style:\n${compactPromptList(inventory.styleRefs, '- default manga rendering', budgets.inventory)}`,
+      `Inspiration:\n${compactPromptList(inventory.inspirationRefs, '- none selected', budgets.inventory)}`,
+      `Background/Object:\n${compactMiddleText(
+        [
+          formatPromptList(inventory.backgrounds, '- no background reference'),
+          formatPromptList(inventory.objects, '- no object reference'),
+        ].join('\n'),
+        budgets.inventory,
+      )}`,
+      '',
+      'TASK TYPE LOCK:',
+      mangaTaskLabel(taskType),
+      '',
+      'NON-NEGOTIABLE LOCKS:',
+      characterNames.length > 1
+        ? `${characterNames
+            .map((asset) => asset.characterName || asset.name)
+            .join(' and ')} must never be swapped, fused, or mixed.`
+        : 'Preserve selected character identity exactly; never replace with a generic manga character.',
+      'Narrative roles are fixed: do not swap actor/observer/reactor/attacker/defender/object-holder.',
+      'Panel functions, panel count, relative panel sizes, gutters, reading order, dominant panel, and panel geometry must remain readable.',
+      panelGeometryLine,
+      compactMiddleText(panelLines.join('\n'), budgets.panelLines),
+      'Pose/action is mandatory: preserve gesture, body orientation, limb placement, hand placement, contact points, action direction, perspective, foreshortening, scale, and viewpoint.',
+      'Back/profile/front/three-quarter views must stay as requested. Do not rotate the character for convenience.',
+      'Keep both arms, both legs, hands, feet, shoulders, action-carrying limbs, silhouette, hair shape, clothing outline, build, and important props readable unless intentionally cropped.',
+      'Expressions may change only where the prompt says so; identity remains locked.',
+      'Dialogue must be exact text, correct language, correct speaker, correct bubble/panel placement; do not invent text.',
+      '',
+      'STYLE AND BACKGROUND LOCK:',
+      labelledInput.styleMode === 'black-white'
+        ? 'Finished black-and-white manga only: crisp ink, clean black fills, purposeful screentones/hatching, flat values, strong silhouettes, print-ready readability.'
+        : labelledInput.styleMode === 'color'
+          ? 'Finished original manga in color: crisp ink, disciplined cel-shaded color, readable silhouettes and values.'
+          : 'Finished original manga. If black-and-white is requested or implied, do not use color; use crisp ink, clean fills, flat values, screentones/hatching only when useful.',
+      'Avoid photorealism, glossy/painterly rendering, muddy greys, random noise, AI-smudge linework, and over-rendered grain unless explicitly requested.',
+      labelledInput.backgroundLevel === 'empty'
+        ? 'Background: empty or nearly empty unless explicitly required.'
+        : labelledInput.backgroundLevel === 'minimal'
+          ? 'Background: minimal decor only; no unwanted complex scenery.'
+          : labelledInput.backgroundLevel === 'detailed'
+            ? 'Background: detailed only where it supports readability and never overpowers characters/panel function.'
+            : 'Background: obey requested level; avoid unwanted complex scenery.',
+      '',
+      isModification ? 'EDIT PRESERVATION LOCK:' : '',
+      isModification
+        ? 'The target image is the existing result to edit, not inspiration. Preserve layout, panel geometry, successful drawings, correct identities, correct expressions/action, speech bubbles, effects, background, and style unless explicitly changed.'
+        : '',
+      taskType === 'targeted_correction'
+        ? 'TARGETED CORRECTION: apply only the named defect/area; keep unrelated panels, characters, pose, expression, background, dialogue, and style stable.'
+        : '',
+      taskType === 'strict_character_replacement'
+        ? 'STRICT CHARACTER REPLACEMENT: replace only requested identity; preserve pose, perspective, orientation, limb placement, silhouette position, panel geometry, background, dialogue, effects, and target style.'
+        : '',
+      '',
+      isModification ? 'PRESERVE:' : 'TARGETED PAGE INSTRUCTIONS:',
+      isModification
+        ? 'Preserve all correct/unchanged elements.'
+        : compactMiddleText(labelledInput.prompt, budgets.targetedInstructions),
+      '',
+      isModification ? 'CHANGE:' : 'TARGETED PANEL INSTRUCTIONS:',
+      isModification
+        ? compactMiddleText(labelledInput.editPrompt || 'Apply only explicitly requested changes.', budgets.targetedInstructions)
+        : compactMiddleText(panelLines.join('\n'), budgets.panelLines),
+      '',
+      'GOLDEN RULES:',
+      'Do not genericize. Do not create a beautiful but different image. No identity swap/fusion. No missing limbs. No unrequested characters/props/background/text/color. The result must answer who, what action, where in panel/page, composition, style, and what remains unchanged.',
+      '',
+      'FINAL MANDATORY INSTRUCTION:',
+      isModification
+        ? `${canvasFormatLine} Modify only requested parts while preserving structure, successful elements, identity, exact pose/orientation, panel geometry, dialogue, background constraints, and original style unless explicitly changed.`
+        : `${canvasFormatLine} Generate final manga artwork obeying identities, roles, panel functions, geometry, pose, orientation, perspective, silhouette, expression, dialogue, style, background, and all locks above.`,
+    ]);
+
+  const budgetSteps = [
+    {
+      userRequest: Infinity,
+      characters: Infinity,
+      imageRoles: Infinity,
+      referenceAnalysis: Infinity,
+      inventory: Infinity,
+      panelLines: Infinity,
+      targetedInstructions: Infinity,
+    },
+    {
+      userRequest: Infinity,
+      characters: 4500,
+      imageRoles: 4500,
+      referenceAnalysis: 9000,
+      inventory: 3500,
+      panelLines: 3500,
+      targetedInstructions: 6000,
+    },
+    {
+      userRequest: Infinity,
+      characters: 2800,
+      imageRoles: 2600,
+      referenceAnalysis: 5500,
+      inventory: 2200,
+      panelLines: 2200,
+      targetedInstructions: 3600,
+    },
+    {
+      userRequest: Math.max(8000, Math.floor(maxLength * 0.46)),
+      characters: 1800,
+      imageRoles: 1600,
+      referenceAnalysis: 3200,
+      inventory: 1400,
+      panelLines: 1400,
+      targetedInstructions: 2200,
+    },
+  ];
+
+  for (const budgets of budgetSteps) {
+    const prompt = build(budgets);
+    if (prompt.length <= maxLength) return prompt;
+  }
+
+  const reserve = 6500;
+  const lastPrompt = build({
+    userRequest: Math.max(3000, maxLength - reserve),
+    characters: 900,
+    imageRoles: 900,
+    referenceAnalysis: 1400,
+    inventory: 700,
+    panelLines: 800,
+    targetedInstructions: 1200,
+  });
+
+  return compactMiddleText(lastPrompt, maxLength);
+}
+
 function buildMangaImagePrompt(input) {
   const taskType = classifyMangaTask(input);
   const isModification = [
@@ -689,9 +910,7 @@ function buildMangaImagePrompt(input) {
         } ${asset.description ? `User notes: ${asset.description}.` : ''}`.trim(),
     );
 
-  return {
-    taskType,
-    prompt: [
+  const fullPrompt = joinPromptLines([
       'OBJECTIVE:',
       objectiveLine,
       '',
@@ -883,9 +1102,33 @@ function buildMangaImagePrompt(input) {
       isModification
         ? `${canvasFormatLine} Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, exact pose/orientation, panel geometry, dialogue, background constraints, and original style unless a style change was explicitly requested.`
         : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, panel geometry, pose mechanics, orientation, perspective, silhouette, expression, dialogue, style, and background level all follow the prompt and locks above.`,
-    ]
-      .filter((line) => line !== '')
-      .join('\n'),
+    ]);
+
+  if (fullPrompt.length <= mangaImagePromptTargetLength) {
+    return {
+      taskType,
+      prompt: fullPrompt,
+    };
+  }
+
+  return {
+    taskType,
+    prompt: buildCompactMangaImagePrompt(
+      {
+        taskType,
+        isModification,
+        labelledInput,
+        inventory,
+        characterNames,
+        userRequest,
+        canvasFormatLine,
+        objectiveLine,
+        panelGeometryLine,
+        panelLines,
+        imageRoleLines,
+      },
+      mangaImagePromptTargetLength,
+    ),
   };
 }
 
