@@ -370,12 +370,6 @@ function assignImageLabels(input, isModification) {
   };
 }
 
-function truncateText(value, maxLength = 900) {
-  const text = cleanText(value);
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 1).trim()}…`;
-}
-
 function extractResponseOutputText(payload) {
   if (typeof payload?.output_text === 'string') return payload.output_text.trim();
 
@@ -516,12 +510,12 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'Make the written analysis strong enough that the final prompt can still work without relying on the image being re-read.',
         '',
         `Task type: ${mangaTaskLabel(taskType)}.`,
-        `User prompt: ${truncateText(labelledInput.prompt, 1200) || '(empty)'}`,
+        `User prompt: ${cleanText(labelledInput.prompt) || '(empty)'}`,
         labelledInput.editPrompt
-          ? `Edit prompt: ${truncateText(labelledInput.editPrompt, 900)}`
+          ? `Edit prompt: ${cleanText(labelledInput.editPrompt)}`
           : '',
         labelledInput.panelInstructions.length
-          ? `Panel notes: ${truncateText(labelledInput.panelInstructions.join(' | '), 1400)}`
+          ? `Panel notes: ${labelledInput.panelInstructions.map((line) => cleanText(line)).filter(Boolean).join(' | ')}`
           : '',
       ]
         .filter(Boolean)
@@ -616,7 +610,7 @@ async function analyzeMangaReferenceImages(input, taskType) {
     );
     const analysis = extractResponseOutputText(payload);
     if (!analysis) throw new Error('OpenAI returned no reference image analysis.');
-    const cleanAnalysis = truncateText(analysis, 9000);
+    const cleanAnalysis = cleanText(analysis);
     rememberReferenceAnalysis(cacheKey, cleanAnalysis);
     return {
       ...labelledInput,
