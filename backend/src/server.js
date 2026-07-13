@@ -184,20 +184,20 @@ const mangaAssetRoles = new Set([
 
 const imageRoleCopy = {
   Character:
-    'defines character identity only: face, hair, outfit, silhouette, expression baseline, and distinctive traits',
+    'defines character identity only: face, hair, outfit, morphology, silhouette, expression baseline, aura, and distinctive traits; it does not define final pose, final expression, or panel position unless explicitly assigned',
   Background: 'defines decor, location, atmosphere, and allowed background complexity',
   Object: 'defines prop identity, shape, scale, and narrative ownership',
   Storyboard:
-    'defines panel structure, framing, reading order, camera angles, character placement, and action order',
+    'defines panel structure, framing, reading order, camera angles, panel functions, character placement, action order, and spatial relationships; it does not define final identity or style',
   Pose: 'defines body angle, gesture, limb placement, movement mechanics, and orientation only',
   Style:
-    'defines rendering style, inking, screentone, hatching, contrast, color policy, and finish level',
+    'defines rendering style, inking, screentone, hatching, contrast, color policy, and finish level only; it does not define identity, pose, composition, or narrative role',
   Inspiration:
     'influences only mood, energy, impact, motion feeling, or visual intensity; it must not override identity or structure',
   Target:
-    'defines the existing image or page to preserve and modify directly',
+    'defines the existing image or page to preserve and modify directly: composition, panel geometry, existing style, correct elements, and targeted defects',
   'Generated Page':
-    'defines the current generated page structure and successful elements to preserve',
+    'defines the current generated page structure, panel geometry, style, and successful elements to preserve',
 };
 
 function cleanText(value, fallback = '') {
@@ -486,6 +486,9 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'The analysis must be self-contained: the final image prompt should remain useful even if the generator could not inspect the reference images.',
         'Some images may be analysis-only if their canvas ratio conflicts with the requested final output. In those cases, extract useful visual facts without preserving their outer page shape or ratio.',
         'References are allowed to strongly guide composition, poses, panel rhythm, expressions, and visual relationships according to their declared role.',
+        'Before analyzing the images, classify each one by role and keep that role boundary strict.',
+        'Apply this hierarchy when references conflict: target/current image for edits, storyboard or structure, character identity, pose, inspiration, style, then free interpretation.',
+        'Never let an inspiration image override a character identity image, a storyboard image, panel geometry, role assignment, or dialogue.',
         'The final rendering style is controlled by the user style mode and STYLE LOCK, even when a reference is more detailed, shaded, or textured.',
         '',
         'Return compact markdown only. For each input image, use this exact structure:',
@@ -508,6 +511,9 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         '- Object: extract prop shape, scale, material, position, ownership, and narrative function.',
         '- Target: extract what must be preserved and what can be changed.',
         '- Inspiration: extract mood, impact, energy, rhythm, and visual intensity only; do not copy identity or layout.',
+        '',
+        'For every image, identify only the points that the final prompt should insist on: posture, gaze, foreground, background, panel role, silhouette, expression, orientation, and relevant style cues.',
+        'Make the written analysis strong enough that the final prompt can still work without relying on the image being re-read.',
         '',
         `Task type: ${mangaTaskLabel(taskType)}.`,
         `User prompt: ${truncateText(labelledInput.prompt, 1200) || '(empty)'}`,
@@ -722,6 +728,11 @@ function buildMangaImagePrompt(input) {
       'Attached images remain authoritative visual references only when they are provided to the final image request. For analysis-only images, rely on the written analysis and never preserve their canvas shape.',
       'Do not invent details that contradict the analysis, user prompt, character profiles, or declared image roles.',
       '',
+      'REFERENCE HIERARCHY LOCK:',
+      'When references conflict, obey this strict order: target/current image for edits, storyboard or structure references, character identity references, pose references, inspiration references, style references, then free interpretation.',
+      'Each image may influence only the element assigned by its declared role. A character image defines identity, not final pose. A pose image defines body mechanics, not identity. A style image defines rendering, not composition. An inspiration image defines mood or impact only.',
+      'Never let an inspiration or style reference replace identity, panel structure, role assignment, dialogue, pose locks, or the user request.',
+      '',
       'IMAGE ROLE INVENTORY:',
       `Character identity references:\n${formatPromptList(
         inventory.identityRefs,
@@ -753,9 +764,10 @@ function buildMangaImagePrompt(input) {
       `Object references:\n${formatPromptList(inventory.objects, '- none selected')}`,
       '',
       'UTILITY OF EACH IMAGE ROLE:',
-      'Character references define WHO the characters are: face, hair, outfit, silhouette, and distinctive traits.',
-      'Storyboard or generated page references define HOW the page is organized: panel structure, framing, action order, and composition.',
-      'Posture references define body angle, gesture, action mechanics, and orientation only.',
+      'Target or existing-image references define what must be edited directly: preserved composition, panel geometry, successful elements, defects to correct, and existing style unless the user requests a style change.',
+      'Character references define WHO the characters are: face, hair, outfit, morphology, silhouette, aura, expression baseline, and distinctive traits. They do not define final pose or final panel placement unless explicitly assigned.',
+      'Storyboard or generated page references define HOW the page is organized: panel count, panel sizes, reading order, framing, camera angle, action order, character placement, and spatial relationships.',
+      'Posture references define body angle, gesture, action mechanics, limb placement, perspective, and orientation only.',
       'Inspiration references influence only energy, mood, motion, or visual impact. They must not override identity, structure, roles, or dialogue.',
       'Style references define rendering direction, but the final amount of detail, 2D flatness, color policy, and shading level are controlled by STYLE LOCK.',
       'Background and object references define decor and props only.',
@@ -763,6 +775,10 @@ function buildMangaImagePrompt(input) {
       '',
       'TASK TYPE LOCK:',
       mangaTaskLabel(taskType),
+      '',
+      'BACKEND PLAN CHECKLIST:',
+      'Before generating, resolve these points from the user prompt, image roles, and reference analysis: task type, involved characters, reference image assigned to each character, character role in the scene, panel structure, panel function, character position per panel, expression per panel, pose/action mechanics, camera angle, dialogue text, style mode, background level, and what must remain faithful versus what may change.',
+      'If a detail is not specified, infer only what is necessary for a coherent manga page and do not override any explicit reference role or lock.',
       '',
       'IDENTITY LOCK:',
       characterNames.length > 1
@@ -777,10 +793,15 @@ function buildMangaImagePrompt(input) {
       '',
       'PANEL FUNCTION LOCK:',
       'Each panel has a fixed narrative function. Do not merge panel functions. Do not replace a specific panel function with a generic beautiful composition.',
+      'Always define the function of each panel before deciding how characters are drawn inside that panel.',
       panelLines.join('\n'),
       '',
       'PANEL GEOMETRY LOCK:',
       panelGeometryLine,
+      'Panel count, relative panel sizes, gutters, reading order, and the intended dominant panel must remain readable. Do not collapse the page into a single illustration unless the user explicitly asks.',
+      inventory.structureRefs.length
+        ? 'Use storyboard or structure references for panel geometry, framing, camera angle, action order, and spatial relationships. Do not copy rough anatomy from a storyboard if it conflicts with clean final anatomy.'
+        : '',
       '',
       'POSE / ACTION LOCK:',
       'The requested pose, action mechanics, body angle, and gesture are not optional. Do not replace them with a generic pose.',
@@ -788,11 +809,21 @@ function buildMangaImagePrompt(input) {
         ? 'Pose references define action mechanics only. They do not define identity unless explicitly assigned as character references.'
         : '',
       '',
-      'ORIENTATION / PERSPECTIVE LOCK:',
-      'Preserve camera angle, foreshortening, scale, spatial direction, and stated orientation. Back view stays back view, profile stays profile, front view stays front view, and three-quarter view stays three-quarter view.',
+      'EXACT POSE LOCK:',
+      'If a posture reference, storyboard, or prompt specifies a pose, keep the same core gesture, body orientation, limb placement, hand placement, contact points, and action direction. Clean the anatomy without changing the gesture.',
       '',
-      'ANATOMY / COMPLETENESS LOCK:',
-      'Do not omit important limbs. Both arms and both legs must remain readable unless intentionally cropped. Do not lose the arm or leg that carries the action.',
+      'PERSPECTIVE LOCK:',
+      'Preserve camera angle, foreshortening, scale, spatial direction, depth relationship, and viewpoint. Do not flatten a dramatic angle into a neutral view.',
+      '',
+      'BACK-VIEW / PROFILE / FRONT-VIEW LOCK:',
+      'Back view stays back view, profile stays profile, front view stays front view, and three-quarter view stays three-quarter view. Do not rotate the character to make the drawing easier.',
+      '',
+      'LIMB PLACEMENT / ANATOMY LOCK:',
+      'Do not omit important limbs. Both arms, both legs, hands, feet, shoulders, and action-carrying body parts must remain readable unless intentionally cropped by the panel. Do not lose the arm or leg that carries the action.',
+      'Correct rough anatomy only where necessary for a polished manga result. Do not use anatomy cleanup as an excuse to change pose, gesture, camera angle, or role.',
+      '',
+      'SILHOUETTE LOCK:',
+      'Preserve the recognizable silhouette of each character, including hair shape, clothing outline, body build, and important props. Silhouette must stay consistent across panels unless the action logically changes it.',
       '',
       'EXPRESSION LOCK:',
       'If the prompt gives a specific expression, it overrides a default expression from a character reference for that panel only. Identity remains unchanged.',
@@ -822,6 +853,19 @@ function buildMangaImagePrompt(input) {
         ? 'Inspiration images may influence only mood, intensity, movement energy, or visual impact. Do not copy them literally and do not let them override character identity, page structure, role assignment, dialogue, or core composition.'
         : 'No inspiration image has priority over the user prompt or the character/structure locks.',
       '',
+      isModification ? 'EXISTING IMAGE PRESERVATION LOCK:' : '',
+      isModification
+        ? 'The target/current image is not a loose inspiration. It is the existing result to edit. Preserve layout, panel geometry, successful drawings, correct character identities, correct expressions, correct action, speech bubble placement, effects, background, and style unless the user explicitly asks to change them.'
+        : '',
+      taskType === 'targeted_correction' ? 'TARGETED CORRECTION LOCK:' : '',
+      taskType === 'targeted_correction'
+        ? 'Apply only the named correction area or defect. Keep every unrelated panel, character, pose, expression, background, dialogue, and stylistic choice stable.'
+        : '',
+      taskType === 'strict_character_replacement' ? 'STRICT CHARACTER REPLACEMENT LOCK:' : '',
+      taskType === 'strict_character_replacement'
+        ? 'Replace only the requested character identity with the provided character reference. Preserve the original pose, perspective, orientation, limb placement, silhouette position, panel geometry, background, dialogue, effects, and style of the target image. Remove the old character identity completely without redesigning the scene.'
+        : '',
+      '',
       isModification ? 'PRESERVE:' : 'TARGETED PAGE INSTRUCTIONS:',
       isModification
         ? 'Preserve the existing layout, style, correct panels, correct character identities, successful composition, and any elements not named in the correction request.'
@@ -832,6 +876,10 @@ function buildMangaImagePrompt(input) {
         ? labelledInput.editPrompt || 'Apply only the explicitly requested changes.'
         : panelLines.join('\n'),
       '',
+      'GOLDEN RULES:',
+      'Do not genericize the request. Do not make a beautiful but different image. Do not swap characters. Do not let a style or inspiration reference replace identity. Do not let identity references replace the requested pose or panel placement. Do not change dialogue. Do not omit important limbs. Do not add unnecessary backgrounds, props, characters, or text.',
+      'The final image must answer who is shown, what action they perform, where they are in the panel/page, how the panel is composed, what style is used, and what must remain unchanged.',
+      '',
       'RESTRICTIONS:',
       isModification
         ? 'Do not alter what is already correct. Do not regenerate the page from scratch unless the user explicitly asks.'
@@ -839,8 +887,8 @@ function buildMangaImagePrompt(input) {
       '',
       'FINAL MANDATORY INSTRUCTION:',
       isModification
-        ? `${canvasFormatLine} Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, pose readability, and exact style.`
-        : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, pose mechanics, orientation, style, and background level all follow the prompt and locks above.`,
+        ? `${canvasFormatLine} Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, exact pose/orientation, panel geometry, dialogue, background constraints, and original style unless a style change was explicitly requested.`
+        : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, panel geometry, pose mechanics, orientation, perspective, silhouette, expression, dialogue, style, and background level all follow the prompt and locks above.`,
     ]
       .filter((line) => line !== '')
       .join('\n'),
