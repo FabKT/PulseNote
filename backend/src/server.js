@@ -68,6 +68,8 @@ const sketchFinalCreditCost = Number(
   process.env.CREDIT_COST_SKETCH_FINAL || mangaPageCreditCost,
 );
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
+// Plafond dur d'OpenAI /images/edits (nombre d'images de référence en entrée).
+const maxMangaReferenceImages = 16;
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 
@@ -371,8 +373,72 @@ function assignImageLabels(input, isModification) {
   };
 }
 
-function getMangaVisualAssets(input) {
-  return input.selectedAssets.filter((asset) => asset.imageDataUrl);
+const STRUCTURE_ROLES = new Set(['Storyboard', 'Generated Page', 'Target']);
+
+function mangaCharacterGroupKey(asset) {
+  return asset.characterId || asset.characterName || asset.name || asset.id;
+}
+
+/**
+ * Sélection équitable et plafonnée des images de référence.
+ *
+ * Contraintes (cf. plan produit) :
+ *  - 16 images maximum (plafond dur d'OpenAI /images/edits) ;
+ *  - une seule image de structure (storyboard / page générée / cible) ;
+ *  - round-robin entre les personnages puis les références, afin qu'AUCUN
+ *    personnage ne soit affamé si le budget est dépassé. Sous le budget, tout
+ *    passe ; au-dessus, chaque personnage est représenté avant les extras.
+ */
+function selectMangaVisualAssets(input, limit = maxMangaReferenceImages) {
+  if (limit <= 0) return [];
+
+  const withImages = input.selectedAssets.filter((asset) => asset.imageDataUrl);
+  const selected = [];
+  const seen = new Set();
+  const take = (asset) => {
+    if (!asset || selected.length >= limit) return false;
+    const key = asset.id || `${asset.role}:${asset.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    selected.push(asset);
+    return true;
+  };
+
+  // 1) une seule image de structure
+  const structure = withImages.find((asset) => STRUCTURE_ROLES.has(asset.role));
+  if (structure) take(structure);
+
+  // 2) groupes round-robin : un par personnage, puis un seau "références"
+  const characterGroups = new Map();
+  const referenceQueue = [];
+  for (const asset of withImages) {
+    if (asset === structure || STRUCTURE_ROLES.has(asset.role)) continue;
+    if (asset.role === 'Character') {
+      const key = mangaCharacterGroupKey(asset);
+      if (!characterGroups.has(key)) characterGroups.set(key, []);
+      characterGroups.get(key).push(asset);
+    } else {
+      referenceQueue.push(asset);
+    }
+  }
+
+  const queues = [...characterGroups.values(), referenceQueue].filter((queue) => queue.length);
+  let progressed = true;
+  while (selected.length < limit && progressed) {
+    progressed = false;
+    for (const queue of queues) {
+      if (!queue.length) continue;
+      if (take(queue.shift())) progressed = true;
+      if (selected.length >= limit) break;
+    }
+  }
+
+  return selected;
+}
+
+// Compat : renvoie la sélection plafonnée (utilisé par l'analyse et le comptage).
+function getMangaVisualAssets(input, limit = maxMangaReferenceImages) {
+  return selectMangaVisualAssets(input, limit);
 }
 
 function extractResponseOutputText(payload) {
@@ -540,7 +606,12 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
     });
   }
 
-  const visualAssets = getMangaVisualAssets(labelledInput);
+  const targetImageCount =
+    labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
+  const visualAssets = selectMangaVisualAssets(
+    labelledInput,
+    maxMangaReferenceImages - targetImageCount,
+  );
   for (const asset of visualAssets) {
     if (!asset.imageDataUrl) continue;
     content.push({
@@ -568,9 +639,8 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
 }
 
 function countReferenceImages(labelledInput) {
-  let count = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
-  count += getMangaVisualAssets(labelledInput).length;
-  return count;
+  const count = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
+  return count + selectMangaVisualAssets(labelledInput, maxMangaReferenceImages - count).length;
 }
 
 async function analyzeMangaReferenceImages(input, taskType) {
@@ -1272,13 +1342,69 @@ function buildMangaImageInputs(input, taskType) {
     if (target) images.push(target);
   }
 
-  for (const asset of getMangaVisualAssets(input)) {
+  const remaining = Math.max(0, maxMangaReferenceImages - images.length);
+  for (const asset of selectMangaVisualAssets(input, remaining)) {
     if (!asset.imageDataUrl) continue;
     const image = dataUrlToImageBlob(asset.imageDataUrl, asset.id || asset.name);
     if (image) images.push(image);
   }
 
   return images;
+}
+
+/**
+ * Diagnostic retourné au client pour rendre chaque génération traçable :
+ * longueur du prompt, compaction déclenchée, images réellement envoyées à
+ * OpenAI, décompte par personnage, et personnages sous-représentés.
+ */
+function buildMangaDiagnostics(input, taskType, finalPrompt) {
+  const isModification = [
+    'existing_image_modification',
+    'strict_character_replacement',
+    'targeted_correction',
+  ].includes(taskType);
+  const targetImageCount = isModification && input.existingImageDataUrl ? 1 : 0;
+  const selected = selectMangaVisualAssets(input, maxMangaReferenceImages - targetImageCount);
+
+  const perCharacterImageCount = {};
+  let structureImages = 0;
+  let referenceImages = 0;
+  for (const asset of selected) {
+    if (asset.role === 'Character') {
+      const key = asset.characterName || asset.name || asset.characterId || 'unknown';
+      perCharacterImageCount[key] = (perCharacterImageCount[key] || 0) + 1;
+    } else if (STRUCTURE_ROLES.has(asset.role)) {
+      structureImages += 1;
+    } else {
+      referenceImages += 1;
+    }
+  }
+
+  const providedCharacters = Array.isArray(input.characters)
+    ? input.characters.map((character) => character.name).filter(Boolean)
+    : [];
+  const charactersWithoutImage = providedCharacters.filter(
+    (name) => !perCharacterImageCount[name],
+  );
+
+  const providedImageCount = input.selectedAssets.filter((asset) => asset.imageDataUrl).length;
+  const imagesSentToOpenAI = selected.length + targetImageCount;
+
+  return {
+    taskType,
+    promptLength: finalPrompt.length,
+    promptLimit: openAIImagePromptMaxLength,
+    promptCompacted: finalPrompt.includes('COMPACT BACKEND PLAN MODE'),
+    maxImages: maxMangaReferenceImages,
+    providedImageCount,
+    imagesSentToOpenAI,
+    droppedImageCount: Math.max(0, providedImageCount + targetImageCount - imagesSentToOpenAI),
+    structureImages,
+    referenceImages,
+    charactersUsed: Object.keys(perCharacterImageCount).length,
+    perCharacterImageCount,
+    charactersWithoutImage,
+  };
 }
 
 async function requestMangaImageGeneration(finalPrompt, requestedImageSize = imageSize) {
@@ -3836,7 +3962,16 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
     const taskType = classifyMangaTask(input);
     const analyzedInput = await analyzeMangaReferenceImages(input, taskType);
     const { prompt: finalPrompt } = buildMangaImagePrompt(analyzedInput);
+    const diagnostics = buildMangaDiagnostics(analyzedInput, taskType, finalPrompt);
     const imageDataUrl = await requestMangaImage(finalPrompt, analyzedInput, taskType);
+
+    console.log(
+      `[manga] prompt=${diagnostics.promptLength}c compacted=${diagnostics.promptCompacted} ` +
+        `images=${diagnostics.imagesSentToOpenAI}/${diagnostics.maxImages} ` +
+        `dropped=${diagnostics.droppedImageCount} ` +
+        `perCharacter=${JSON.stringify(diagnostics.perCharacterImageCount)} ` +
+        `missing=${JSON.stringify(diagnostics.charactersWithoutImage)}`,
+    );
 
     res.json({
       imageDataUrl,
@@ -3848,6 +3983,7 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
       quality: imageQuality,
       creditsUsed: mangaPageCreditCost,
       createdAt: new Date().toISOString(),
+      diagnostics,
     });
   } catch (error) {
     console.error('Manga page generation failed:', error);
