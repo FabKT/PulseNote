@@ -56,10 +56,6 @@ const imageAnalysisEnabled = process.env.IMAGE_ANALYSIS_ENABLED !== 'false';
 const imageAnalysisTimeoutMs = Number(process.env.IMAGE_ANALYSIS_TIMEOUT_MS || 120000);
 const referenceAnalysisCacheLimit = Number(process.env.REFERENCE_ANALYSIS_CACHE_LIMIT || 160);
 const openAIImagePromptMaxLength = 32000;
-const mangaImagePromptTargetLength = Math.min(
-  openAIImagePromptMaxLength - 500,
-  Math.max(12000, Number(process.env.MANGA_IMAGE_PROMPT_TARGET_LENGTH || 31500)),
-);
 const imageRequestMaxAttempts = Math.max(
   1,
   Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 2)),
@@ -72,7 +68,6 @@ const sketchFinalCreditCost = Number(
   process.env.CREDIT_COST_SKETCH_FINAL || mangaPageCreditCost,
 );
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
-const maxMangaReferenceImages = 8;
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 
@@ -376,62 +371,8 @@ function assignImageLabels(input, isModification) {
   };
 }
 
-function mangaAssetGroupKey(asset) {
-  if (asset.role === 'Character') {
-    return `character:${asset.characterId || asset.characterName || asset.name || asset.id}`;
-  }
-  return `${asset.role}:${asset.id || asset.name}`;
-}
-
-function pushUniqueMangaAsset(target, seenIds, asset, limit) {
-  if (!asset?.imageDataUrl) return false;
-  if (target.length >= limit) return false;
-  const key = asset.id || `${asset.role}:${asset.name}:${asset.imageLabel || target.length}`;
-  if (seenIds.has(key)) return false;
-  seenIds.add(key);
-  target.push(asset);
-  return true;
-}
-
-function selectMangaVisualAssets(input, limit = maxMangaReferenceImages, options = {}) {
-  if (limit <= 0) return [];
-
-  const assets = input.selectedAssets.filter(
-    (asset) =>
-      asset.imageDataUrl &&
-      (options.includeAnalysisOnly || shouldAttachMangaAssetImage(input, asset)),
-  );
-  const selected = [];
-  const seenIds = new Set();
-
-  const pushRole = (roles, maxPerGroup = Infinity) => {
-    const roleSet = new Set(Array.isArray(roles) ? roles : [roles]);
-    const groupCounts = new Map();
-    for (const asset of assets) {
-      if (!roleSet.has(asset.role)) continue;
-      const groupKey = mangaAssetGroupKey(asset);
-      const count = groupCounts.get(groupKey) || 0;
-      if (count >= maxPerGroup) continue;
-      if (pushUniqueMangaAsset(selected, seenIds, asset, limit)) {
-        groupCounts.set(groupKey, count + 1);
-      }
-      if (selected.length >= limit) return;
-    }
-  };
-
-  pushRole(['Storyboard', 'Generated Page', 'Target'], 1);
-  pushRole('Character', 1);
-  pushRole('Pose', 1);
-  pushRole('Style', 1);
-  pushRole(['Background', 'Object'], 1);
-  pushRole('Character', 1);
-  pushRole(['Inspiration', 'Background', 'Object', 'Pose', 'Style'], 2);
-
-  for (const asset of assets) {
-    if (pushUniqueMangaAsset(selected, seenIds, asset, limit) && selected.length >= limit) break;
-  }
-
-  return selected;
+function getMangaVisualAssets(input) {
+  return input.selectedAssets.filter((asset) => asset.imageDataUrl);
 }
 
 function extractResponseOutputText(payload) {
@@ -545,7 +486,7 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'Some images may be analysis-only if their canvas ratio conflicts with the requested final output. In those cases, extract useful visual facts without preserving their outer page shape or ratio.',
         'References are allowed to strongly guide composition, poses, panel rhythm, expressions, and visual relationships according to their declared role.',
         'Before analyzing the images, classify each one by role and keep that role boundary strict.',
-        'Apply this hierarchy when references conflict: target/current image for edits, storyboard or structure, character identity, pose, inspiration, style, then free interpretation.',
+        'Apply this hierarchy when references conflict: explicit user instruction, target/current image for edits, user-assigned roles and identities, storyboard or structure, character identity, pose, inspiration, general style, then free interpretation.',
         'Never let an inspiration image override a character identity image, a storyboard image, panel geometry, role assignment, or dialogue.',
         'The final rendering style is controlled by the user style mode and STYLE LOCK, even when a reference is more detailed, shaded, or textured.',
         '',
@@ -599,13 +540,7 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
     });
   }
 
-  const targetImageCount =
-    labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
-  const visualAssets = selectMangaVisualAssets(
-    labelledInput,
-    maxMangaReferenceImages - targetImageCount,
-    { includeAnalysisOnly: true },
-  );
+  const visualAssets = getMangaVisualAssets(labelledInput);
   for (const asset of visualAssets) {
     if (!asset.imageDataUrl) continue;
     content.push({
@@ -634,9 +569,7 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
 
 function countReferenceImages(labelledInput) {
   let count = labelledInput.targetImageLabel && labelledInput.existingImageDataUrl ? 1 : 0;
-  count += selectMangaVisualAssets(labelledInput, maxMangaReferenceImages - count, {
-    includeAnalysisOnly: true,
-  }).length;
+  count += getMangaVisualAssets(labelledInput).length;
   return count;
 }
 
@@ -726,7 +659,7 @@ function compactPromptList(items, fallback, maxLength) {
   return compactMiddleText(formatPromptList(items, fallback), maxLength);
 }
 
-function buildCompactMangaImagePrompt(context, maxLength = mangaImagePromptTargetLength) {
+function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptMaxLength) {
   const {
     taskType,
     isModification,
@@ -778,7 +711,7 @@ function buildCompactMangaImagePrompt(context, maxLength = mangaImagePromptTarge
       ),
       '',
       'REFERENCE HIERARCHY AND ROLE LOCK:',
-      'Resolve conflicts in this order: target/current image for edits > storyboard/structure > character identity > pose > inspiration > style > free interpretation.',
+      'Resolve conflicts in this order: explicit user instruction > target/current image for edits > user-assigned roles and identities > storyboard/structure > character identity > pose > inspiration > general style > free interpretation.',
       'Each image influences only its assigned role: character=identity; storyboard/layout=panel geometry/framing/action order; pose=body mechanics/orientation; style=rendering only; inspiration=mood/impact only; target=preserve/edit current image.',
       'Never let style or inspiration override identity, panel structure, role assignment, dialogue, pose locks, or the user request.',
       '',
@@ -805,9 +738,7 @@ function buildCompactMangaImagePrompt(context, maxLength = mangaImagePromptTarge
       '',
       'NON-NEGOTIABLE LOCKS:',
       characterNames.length > 1
-        ? `${characterNames
-            .map((asset) => asset.characterName || asset.name)
-            .join(' and ')} must never be swapped, fused, or mixed.`
+        ? `${characterNames.join(' and ')} must never be swapped, fused, or mixed.`
         : 'Preserve selected character identity exactly; never replace with a generic manga character.',
       'Narrative roles are fixed: do not swap actor/observer/reactor/attacker/defender/object-holder.',
       'Panel functions, panel count, relative panel sizes, gutters, reading order, dominant panel, and panel geometry must remain readable.',
@@ -931,7 +862,14 @@ function buildMangaImagePrompt(input) {
   ].includes(taskType);
   const labelledInput = assignImageLabels(input, isModification);
   const inventory = inventoryMangaAssets(labelledInput);
-  const characterNames = inventory.identityRefs.slice(0, 4);
+  const characterNames = Array.from(
+    new Set(
+      [
+        ...labelledInput.characters.map((character) => character.name),
+        ...inventory.identityRefs.map((asset) => asset.characterName || asset.name),
+      ].filter(Boolean),
+    ),
+  );
   const userRequest =
     labelledInput.operation === 'edit' && labelledInput.editPrompt
       ? labelledInput.editPrompt
@@ -964,11 +902,7 @@ function buildMangaImagePrompt(input) {
     .filter((asset) => asset.imageDataUrl)
     .map(
       (asset) =>
-        `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. This image ${
-          asset.omitFromImageGeneration
-            ? 'is analysis-only for final generation; use the written visual facts without attaching it as a source image'
-            : imageRoleCopy[asset.role]
-        }. ${
+        `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. This image ${imageRoleCopy[asset.role]}. ${
           asset.characterName ? `Assigned character profile: ${asset.characterName}.` : ''
         } ${asset.description ? `User notes: ${asset.description}.` : ''}`.trim(),
     );
@@ -1005,7 +939,7 @@ function buildMangaImagePrompt(input) {
       'Do not invent details that contradict the analysis, user prompt, character profiles, or declared image roles.',
       '',
       'REFERENCE HIERARCHY LOCK:',
-      'When references conflict, obey this strict order: target/current image for edits, storyboard or structure references, character identity references, pose references, inspiration references, style references, then free interpretation.',
+      'When references conflict, obey this strict order: explicit user instructions, target/current image for edits, user-assigned roles and identities, storyboard or structure references, character identity references, pose references, inspiration references, general style, then free interpretation.',
       'Each image may influence only the element assigned by its declared role. A character image defines identity, not final pose. A pose image defines body mechanics, not identity. A style image defines rendering, not composition. An inspiration image defines mood or impact only.',
       'Never let an inspiration or style reference replace identity, panel structure, role assignment, dialogue, pose locks, or the user request.',
       '',
@@ -1058,7 +992,7 @@ function buildMangaImagePrompt(input) {
       '',
       'IDENTITY LOCK:',
       characterNames.length > 1
-        ? `${characterNames.map((asset) => asset.characterName || asset.name).join(
+        ? `${characterNames.join(
             ' and ',
           )} must never be swapped, fused, or visually mixed. Each character keeps only their own identity traits.`
         : 'Preserve the selected character identity traits exactly. Do not replace the selected character with a generic manga character.',
@@ -1167,7 +1101,7 @@ function buildMangaImagePrompt(input) {
         : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, panel geometry, pose mechanics, orientation, perspective, silhouette, expression, dialogue, style, and background level all follow the prompt and locks above.`,
     ]);
 
-  if (fullPrompt.length <= mangaImagePromptTargetLength) {
+  if (fullPrompt.length <= openAIImagePromptMaxLength) {
     return {
       taskType,
       prompt: fullPrompt,
@@ -1190,7 +1124,7 @@ function buildMangaImagePrompt(input) {
         panelLines,
         imageRoleLines,
       },
-      mangaImagePromptTargetLength,
+      openAIImagePromptMaxLength,
     ),
   };
 }
@@ -1338,20 +1272,13 @@ function buildMangaImageInputs(input, taskType) {
     if (target) images.push(target);
   }
 
-  const remainingSlots = Math.max(0, maxMangaReferenceImages - images.length);
-  for (const asset of selectMangaVisualAssets(input, remainingSlots)) {
+  for (const asset of getMangaVisualAssets(input)) {
     if (!asset.imageDataUrl) continue;
     const image = dataUrlToImageBlob(asset.imageDataUrl, asset.id || asset.name);
     if (image) images.push(image);
-    if (images.length >= maxMangaReferenceImages) break;
   }
 
   return images;
-}
-
-function shouldAttachMangaAssetImage(input, asset) {
-  if (asset.omitFromImageGeneration) return false;
-  return true;
 }
 
 async function requestMangaImageGeneration(finalPrompt, requestedImageSize = imageSize) {
@@ -1433,8 +1360,7 @@ function normalizeCharacterCardReferences(references) {
       mimeType: cleanText(reference?.mimeType),
       description: cleanText(reference?.description),
     }))
-    .filter((reference) => reference.imageDataUrl)
-    .slice(0, 4);
+    .filter((reference) => reference.imageDataUrl);
 }
 
 function normalizeCharacterCardInput(body) {
@@ -3378,7 +3304,7 @@ function buildCharacterCardPrompt(input) {
 function buildCharacterCardImageInputs(input) {
   const images = [];
   const addImage = (dataUrl, filename) => {
-    if (!dataUrl || images.length >= 8) return;
+    if (!dataUrl) return;
     const image = dataUrlToImageBlob(dataUrl, filename);
     if (image) images.push(image);
   };
@@ -3414,8 +3340,7 @@ function normalizeSketchFinalReferences(references) {
       imageDataUrl: cleanImageDataUrl(reference?.imageDataUrl),
       description: cleanText(reference?.description || reference?.notes),
     }))
-    .filter((reference) => reference.imageDataUrl)
-    .slice(0, 6);
+    .filter((reference) => reference.imageDataUrl);
 }
 
 function normalizeSketchFinalInput(body) {
@@ -3615,7 +3540,7 @@ function buildSketchFinalPrompt(input) {
 function buildSketchFinalImageInputs(input) {
   const images = [];
   const addImage = (dataUrl, filename) => {
-    if (!dataUrl || images.length >= 8) return;
+    if (!dataUrl) return;
     const image = dataUrlToImageBlob(dataUrl, filename);
     if (image) images.push(image);
   };
@@ -3652,7 +3577,6 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     referenceImageAspectGuard: true,
     referenceCopyGuard: false,
     flatMangaStyleGuard: false,
-    maxReferenceImages: 8,
     generationEndpoint: '/api/manga/generate-page',
     characterGenerationEndpoint: '/api/character/generate',
     sketchFinalGenerationEndpoint: '/api/sketch-final/generate',
@@ -3890,7 +3814,7 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
     pages: Array.isArray(req.body?.pages) ? req.body.pages : [1],
     panelCount: clampPanelCount(req.body?.panelCount),
     panelInstructions: Array.isArray(req.body?.panelInstructions)
-      ? req.body.panelInstructions.map((line) => cleanText(line)).filter(Boolean).slice(0, 12)
+      ? req.body.panelInstructions.map((line) => cleanText(line)).filter(Boolean)
       : [],
     selectedAssets: normalizeMangaAssets(req.body?.selectedAssets),
     characters: normalizeMangaCharacters(req.body?.characters),
