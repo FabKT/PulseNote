@@ -50,15 +50,15 @@ function normalizeMangaAspectRatio(value, requestedImageSize = imageSize) {
 const imageSize = normalizeMangaImageSize(process.env.IMAGE_SIZE);
 const imageQuality = process.env.IMAGE_QUALITY || 'high';
 const imageFormat = process.env.IMAGE_FORMAT || 'png';
-const imageGenerationTimeoutMs = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS || 420000);
-const imageEditTimeoutMs = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 540000);
+const imageGenerationTimeoutMs = Number(process.env.IMAGE_GENERATION_TIMEOUT_MS || 300000);
+const imageEditTimeoutMs = Number(process.env.IMAGE_EDIT_TIMEOUT_MS || 330000);
 const imageAnalysisEnabled = process.env.IMAGE_ANALYSIS_ENABLED !== 'false';
-const imageAnalysisTimeoutMs = Number(process.env.IMAGE_ANALYSIS_TIMEOUT_MS || 120000);
+const imageAnalysisTimeoutMs = Number(process.env.IMAGE_ANALYSIS_TIMEOUT_MS || 90000);
 const referenceAnalysisCacheLimit = Number(process.env.REFERENCE_ANALYSIS_CACHE_LIMIT || 160);
 const openAIImagePromptMaxLength = 32000;
 const imageRequestMaxAttempts = Math.max(
   1,
-  Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 2)),
+  Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 1)),
 );
 const mangaPageCreditCost = Number(process.env.CREDIT_COST_MANGA_PAGE || 10);
 const characterCardCreditCost = Number(
