@@ -7,6 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import multer from 'multer';
 import OpenAI from 'openai';
+import { createClient } from '@supabase/supabase-js';
 import admin from 'firebase-admin';
 
 const app = express();
@@ -72,6 +73,8 @@ const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
 const maxMangaReferenceImages = 16;
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 if (!openaiApiKey) {
   throw new Error('OPENAI_API_KEY is required.');
@@ -81,8 +84,16 @@ if (!appClientToken || appClientToken.length < 24) {
   throw new Error('APP_CLIENT_TOKEN must be a long random secret.');
 }
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn(
+    'SUPABASE_URL/SUPABASE_ANON_KEY not set: Supabase-authenticated clients will be rejected (Firebase and x-app-token still work).',
+  );
+}
+
 const openai = new OpenAI({ apiKey: openaiApiKey });
 admin.initializeApp({ projectId: firebaseProjectId });
+const supabase =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 const referenceAnalysisCache = new Map();
 
 const uploadDir = path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads');
@@ -108,11 +119,30 @@ async function requireAuth(req, res, next) {
   const authorization = req.header('authorization') || '';
   const [, bearerToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
   if (bearerToken) {
+    // Deux populations de clients partagent ce backend : CollabManga/Manga
+    // Forge (Firebase Auth) et Ultimate Audio Recorder (Supabase Auth). On
+    // tente les deux verifications avant de retomber sur le token applicatif.
     try {
       req.user = await admin.auth().verifyIdToken(bearerToken);
+      req.authProvider = 'firebase';
       return next();
-    } catch (error) {
-      console.warn('Firebase token rejected:', error?.message || error);
+    } catch (firebaseError) {
+      if (supabase) {
+        try {
+          const { data, error } = await supabase.auth.getUser(bearerToken);
+          if (error || !data?.user) {
+            throw error || new Error('No user for token.');
+          }
+          req.user = data.user;
+          req.authProvider = 'supabase';
+          return next();
+        } catch (supabaseError) {
+          console.warn('Firebase token rejected:', firebaseError?.message || firebaseError);
+          console.warn('Supabase token rejected:', supabaseError?.message || supabaseError);
+        }
+      } else {
+        console.warn('Firebase token rejected:', firebaseError?.message || firebaseError);
+      }
     }
   }
 
