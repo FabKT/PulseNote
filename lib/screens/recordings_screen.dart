@@ -6,10 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/premium_feature.dart';
 import '../models/recording_model.dart';
+import '../models/subscription_tier.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
 import '../widgets/audio_waveform.dart';
+import '../widgets/paywall_sheet.dart';
 import 'recording_detail_screen.dart';
 
 class RecordingsScreen extends StatefulWidget {
@@ -30,6 +33,11 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
         top: true,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _Header(onQueryChanged: (value) => setState(() => _query = value)),
+          Consumer<AppState>(
+            builder: (_, state, __) => state.overQuotaRecordings.isEmpty
+                ? const SizedBox.shrink()
+                : _QuotaBanner(recordings: state.overQuotaRecordings),
+          ),
           Expanded(
             child: Consumer<AppState>(
               builder: (_, state, __) {
@@ -407,6 +415,10 @@ class _RecordingCardState extends State<RecordingCard> {
   }
 
   Future<void> _transcribe(AppState state) async {
+    if (!state.tier.hasTranscription) {
+      await showPaywall(context, feature: PremiumFeature.recordingTranscription);
+      return;
+    }
     setState(() => _loading = true);
     try {
       await state.transcribeRecording(widget.recording.id);
@@ -420,6 +432,10 @@ class _RecordingCardState extends State<RecordingCard> {
   }
 
   Future<void> _summarize(AppState state) async {
+    if (!state.tier.hasAiSummary) {
+      await showPaywall(context, feature: PremiumFeature.aiSummary);
+      return;
+    }
     setState(() => _loading = true);
     try {
       if (widget.recording.transcription == null) {
@@ -728,6 +744,67 @@ class _ActionBtn extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+class _QuotaBanner extends StatelessWidget {
+  final List<RecordingModel> recordings;
+  const _QuotaBanner({required this.recordings});
+
+  @override
+  Widget build(BuildContext context) {
+    final deadlines = recordings.map((r) => r.overQuotaDeadline!).toList()
+      ..sort();
+    final earliest = deadlines.first;
+    final dateLabel = DateFormat('dd/MM à HH:mm').format(earliest);
+    final count = recordings.length;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.danger.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.danger.withValues(alpha: 0.32)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.cloud_off_rounded, color: AppTheme.danger, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? '1 enregistrement dépasse votre quota de sauvegarde cloud (500 Mo).'
+                  : '$count enregistrements dépassent votre quota de sauvegarde cloud (500 Mo).',
+              style: const TextStyle(
+                color: AppTheme.danger,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          'Utilisez l\'icône de téléchargement pour les sauvegarder, sinon '
+          'ils seront supprimés du téléphone à partir du $dateLabel.',
+          style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 36,
+          child: OutlinedButton(
+            onPressed: () => showPaywall(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.accent,
+              side: const BorderSide(color: AppTheme.accent),
+            ),
+            child: const Text('Passer à un palier payant',
+                style: TextStyle(fontSize: 12)),
+          ),
+        ),
+      ]),
     );
   }
 }

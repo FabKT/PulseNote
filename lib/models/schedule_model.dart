@@ -11,8 +11,9 @@ class ScheduleModel {
   final List<int> daysOfWeek;
   final String? recordingName;
   final bool isActive;
+  final DateTime updatedAt;
 
-  const ScheduleModel({
+  ScheduleModel({
     required this.id,
     required this.startTime,
     required this.endTime,
@@ -21,7 +22,8 @@ class ScheduleModel {
     this.daysOfWeek = const [1, 2, 3, 4, 5, 6, 7],
     this.recordingName,
     this.isActive = true,
-  });
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? DateTime.now();
 
   bool isCurrentlyActive() {
     if (!isActive) return false;
@@ -55,6 +57,7 @@ class ScheduleModel {
         'daysOfWeek': daysOfWeek,
         'recordingName': recordingName,
         'isActive': isActive,
+        'updatedAt': updatedAt.toIso8601String(),
       };
 
   factory ScheduleModel.fromJson(Map<String, dynamic> json) => ScheduleModel(
@@ -77,6 +80,9 @@ class ScheduleModel {
         ),
         recordingName: json['recordingName'] as String?,
         isActive: json['isActive'] as bool? ?? true,
+        updatedAt: json['updatedAt'] != null
+            ? DateTime.parse(json['updatedAt'] as String)
+            : null,
       );
 
   ScheduleModel copyWith({
@@ -88,6 +94,7 @@ class ScheduleModel {
     List<int>? daysOfWeek,
     String? recordingName,
     bool? isActive,
+    DateTime? updatedAt,
   }) =>
       ScheduleModel(
         id: id ?? this.id,
@@ -98,5 +105,6 @@ class ScheduleModel {
         daysOfWeek: daysOfWeek ?? this.daysOfWeek,
         recordingName: recordingName ?? this.recordingName,
         isActive: isActive ?? this.isActive,
+        updatedAt: updatedAt ?? DateTime.now(),
       );
 }

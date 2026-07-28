@@ -3,9 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/audio_playback_schedule_model.dart';
+import '../models/premium_feature.dart';
 import '../models/recording_model.dart';
+import '../models/subscription_tier.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
+import '../widgets/feature_lock_screen.dart';
 import '../widgets/flat_number_picker.dart';
 
 class ScheduledAudioScreen extends StatelessWidget {
@@ -13,6 +16,12 @@ class ScheduledAudioScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!context.watch<AppState>().tier.hasPlaybackSchedules) {
+      return const FeatureLockScreen(
+        feature: PremiumFeature.playbackSchedule,
+        title: 'Lecture planifiée',
+      );
+    }
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(

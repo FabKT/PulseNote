@@ -6,13 +6,15 @@ class SecureFolderModel {
   final String name;
   final String? pinHash;
   final DateTime createdAt;
+  final DateTime updatedAt;
 
-  const SecureFolderModel({
+  SecureFolderModel({
     required this.id,
     required this.name,
     this.pinHash,
     required this.createdAt,
-  });
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   static String hashPin(String pin) =>
       sha256.convert(utf8.encode(pin)).toString();
@@ -26,6 +28,7 @@ class SecureFolderModel {
         'name': name,
         'pinHash': pinHash,
         'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
       };
 
   factory SecureFolderModel.fromJson(Map<String, dynamic> json) =>
@@ -34,5 +37,8 @@ class SecureFolderModel {
         name: json['name'] as String,
         pinHash: json['pinHash'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
+        updatedAt: json['updatedAt'] != null
+            ? DateTime.parse(json['updatedAt'] as String)
+            : null,
       );
 }

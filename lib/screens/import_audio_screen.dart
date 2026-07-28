@@ -4,8 +4,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/premium_feature.dart';
+import '../models/subscription_tier.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
+import '../widgets/feature_lock_screen.dart';
 import 'recordings_screen.dart';
 
 class ImportAudioScreen extends StatefulWidget {
@@ -34,6 +37,12 @@ class _ImportAudioScreenState extends State<ImportAudioScreen> {
         : _fileName(_selectedFile!.path);
 
     final state = context.watch<AppState>();
+    if (!state.tier.hasAudioImport) {
+      return const FeatureLockScreen(
+        feature: PremiumFeature.audioImport,
+        title: 'Importer un audio',
+      );
+    }
     final importedRecordings = [
       for (final id in _importedRecordingIds)
         if (state.recordingById(id) != null) state.recordingById(id)!,

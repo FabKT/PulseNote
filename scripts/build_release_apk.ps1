@@ -2,7 +2,15 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$BackendBaseUrl,
 
-  [string]$AppClientToken
+  [string]$AppClientToken,
+
+  [Parameter(Mandatory = $true)]
+  [string]$SupabaseUrl,
+
+  [Parameter(Mandatory = $true)]
+  [string]$SupabaseAnonKey,
+
+  [string]$GoogleWebClientId
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,4 +36,7 @@ if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
 
 & "C:\dev1\Flutter\flutter\bin\flutter.bat" build apk --release `
   "--dart-define=BACKEND_BASE_URL=$BackendBaseUrl" `
-  "--dart-define=APP_CLIENT_TOKEN=$AppClientToken"
+  "--dart-define=APP_CLIENT_TOKEN=$AppClientToken" `
+  "--dart-define=SUPABASE_URL=$SupabaseUrl" `
+  "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey" `
+  "--dart-define=GOOGLE_WEB_CLIENT_ID=$GoogleWebClientId"

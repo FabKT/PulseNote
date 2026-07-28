@@ -9,7 +9,7 @@ import os from 'node:os';
 import { promisify } from 'node:util';
 import multer from 'multer';
 import OpenAI from 'openai';
-import admin from 'firebase-admin';
+import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -34,7 +34,8 @@ const realtimeTranscriptionModel = [
   : defaultRealtimeTranscriptionModel;
 const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
-const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const directTranscriptionMaxBytes = 24 * 1024 * 1024;
 const uploadMaxBytes = Number(process.env.MAX_AUDIO_UPLOAD_MB || 500) * 1024 * 1024;
 const chunkSeconds = Number(process.env.TRANSCRIPTION_CHUNK_SECONDS || 600);
@@ -47,8 +48,12 @@ if (!appClientToken || appClientToken.length < 24) {
   throw new Error('APP_CLIENT_TOKEN must be a long random secret.');
 }
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required.');
+}
+
 const openai = new OpenAI({ apiKey: openaiApiKey });
-admin.initializeApp({ projectId: firebaseProjectId });
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const uploadDir = path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads');
 const upload = multer({
@@ -74,10 +79,14 @@ async function requireAuth(req, res, next) {
   const [, bearerToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
   if (bearerToken) {
     try {
-      req.user = await admin.auth().verifyIdToken(bearerToken);
+      const { data, error } = await supabase.auth.getUser(bearerToken);
+      if (error || !data?.user) {
+        throw error || new Error('No user for token.');
+      }
+      req.user = data.user;
       return next();
     } catch (error) {
-      console.warn('Firebase token rejected:', error?.message || error);
+      console.warn('Supabase token rejected:', error?.message || error);
     }
   }
 

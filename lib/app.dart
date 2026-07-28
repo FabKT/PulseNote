@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'screens/folders_screen.dart';
 import 'screens/auth_screen.dart';
+import 'screens/continuous_playback_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_audio_screen.dart';
 import 'screens/keywords_screen.dart';
@@ -60,6 +61,8 @@ class _MainNavigationState extends State<MainNavigation> {
       openKeywords: () => _openStandalone(const KeywordsScreen()),
       openFolders: () => _openStandalone(const FoldersScreen()),
       openScheduledAudio: () => _openStandalone(const ScheduledAudioScreen()),
+      openContinuousPlayback: () =>
+          _openStandalone(const ContinuousPlaybackScreen()),
       openImportAudio: () => _openStandalone(const ImportAudioScreen()),
       openMp4ToMp3: () => _openStandalone(const Mp4ToMp3Screen()),
       openProfile: () => _openStandalone(const ProfileScreen()),
@@ -131,6 +134,7 @@ class MenuNavigationScope extends InheritedWidget {
   final VoidCallback openKeywords;
   final VoidCallback openFolders;
   final VoidCallback openScheduledAudio;
+  final VoidCallback openContinuousPlayback;
   final VoidCallback openImportAudio;
   final VoidCallback openMp4ToMp3;
   final VoidCallback openProfile;
@@ -142,6 +146,7 @@ class MenuNavigationScope extends InheritedWidget {
     required this.openKeywords,
     required this.openFolders,
     required this.openScheduledAudio,
+    required this.openContinuousPlayback,
     required this.openImportAudio,
     required this.openMp4ToMp3,
     required this.openProfile,

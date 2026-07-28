@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../ui/app_theme.dart';
+import '../widgets/paywall_sheet.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -16,33 +17,34 @@ class SettingsScreen extends StatelessWidget {
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        children: const [
+        children: [
           _SettingsTile(
             icon: Icons.workspace_premium_rounded,
             title: "Gestion de l'abonnement",
             subtitle: 'Offre Pro, renouvellement et restauration.',
+            onTap: () => showPaywall(context),
           ),
-          _SettingsTile(
+          const _SettingsTile(
             icon: Icons.privacy_tip_rounded,
             title: 'Politique de confidentialité',
             subtitle: 'Données audio, transcription et conservation.',
           ),
-          _SettingsTile(
+          const _SettingsTile(
             icon: Icons.description_rounded,
             title: "Conditions d'utilisation",
             subtitle: "Règles d'usage de l'application.",
           ),
-          _SettingsTile(
+          const _SettingsTile(
             icon: Icons.notifications_rounded,
             title: 'Notifications',
             subtitle: 'Alertes de session et enregistrements planifiés.',
           ),
-          _SettingsTile(
+          const _SettingsTile(
             icon: Icons.storage_rounded,
             title: 'Stockage',
             subtitle: 'Gestion locale des audios et exports.',
           ),
-          _SettingsTile(
+          const _SettingsTile(
             icon: Icons.info_rounded,
             title: 'À propos',
             subtitle: 'Version, support et informations légales.',
@@ -57,10 +59,12 @@ class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
   const _SettingsTile({
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
 
   @override
@@ -69,6 +73,7 @@ class _SettingsTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: AppTheme.panel(radius: 16),
       child: ListTile(
+        onTap: onTap,
         leading: Icon(icon, color: AppTheme.primary),
         title: Text(title, style: const TextStyle(color: AppTheme.text)),
         subtitle: Text(

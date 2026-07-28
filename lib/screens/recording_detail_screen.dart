@@ -7,10 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/premium_feature.dart';
 import '../models/recording_model.dart';
+import '../models/subscription_tier.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
 import '../widgets/audio_waveform.dart';
+import '../widgets/paywall_sheet.dart';
 
 enum RecordingDetailSection { transcription, summary }
 
@@ -312,6 +315,16 @@ class _RecordingDetailScreenState extends State<RecordingDetailScreen> {
     AppState state,
     RecordingModel recording,
   ) async {
+    final feature = _section == RecordingDetailSection.transcription
+        ? PremiumFeature.recordingTranscription
+        : PremiumFeature.aiSummary;
+    final unlocked = _section == RecordingDetailSection.transcription
+        ? state.tier.hasTranscription
+        : state.tier.hasAiSummary;
+    if (!unlocked) {
+      await showPaywall(context, feature: feature);
+      return;
+    }
     setState(() => _loadingText = true);
     try {
       if (_section == RecordingDetailSection.transcription) {

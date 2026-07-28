@@ -57,9 +57,16 @@ L'APK sera genere ici :
 build\app\outputs\flutter-apk\app-release.apk
 ```
 
+## Authentification
+
+L'authentification utilisateur (email/mot de passe + Google) est geree par
+Supabase Auth. Le backend valide le token envoye par l'app via
+`supabase.auth.getUser(token)` (voir `requireAuth` dans `src/server.js`) ;
+il lui faut donc `SUPABASE_URL` et `SUPABASE_ANON_KEY` en variables
+d'environnement (memes secrets que cote Flutter).
+
 ## Important avant publication
 
-Le token `APP_CLIENT_TOKEN` est une protection temporaire. Pour une vraie
-publication, il faudra remplacer ce token statique par une authentification
-utilisateur, idealement Firebase Auth, puis verifier les abonnements cote
-backend.
+Le token `APP_CLIENT_TOKEN` reste un mecanisme de secours (utilise si aucun
+utilisateur n'est connecte). Une fois l'authentification Supabase en place,
+il faudra egalement verifier les abonnements premium cote backend.

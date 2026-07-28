@@ -1,6 +1,6 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'config/supabase_config.dart';
 import 'services/foreground_service.dart';
 import 'services/auth_service.dart';
 import 'state/app_state.dart';
@@ -13,7 +13,9 @@ import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  if (SupabaseConfig.isConfigured) {
+    await AuthService.initializeSupabase();
+  }
   await AuthService.initializeGoogleSignIn();
 
   // Configure le service foreground (notification, options) au démarrage

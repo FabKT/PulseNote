@@ -10,6 +10,18 @@ class RecordingModel {
   String? folderId;
   String? transcription;
   String? summary;
+  DateTime updatedAt;
+  // Chemin de l'objet dans le bucket Supabase Storage une fois synchronisé.
+  String? storagePath;
+  // Taille du fichier local en octets, utilisée pour le quota de stockage
+  // cloud du palier Gratuit.
+  int? sizeBytes;
+  // Vrai seulement une fois l'upload Storage confirmé (voir SyncService).
+  bool cloudSynced;
+  // Non nul = l'enregistrement dépasse le quota Gratuit, reste local
+  // uniquement, et sera supprimé automatiquement à cette date s'il n'est
+  // pas exporté ou si l'utilisateur ne passe pas à un palier payant.
+  DateTime? overQuotaDeadline;
 
   RecordingModel({
     required this.id,
@@ -23,7 +35,12 @@ class RecordingModel {
     this.folderId,
     this.transcription,
     this.summary,
-  });
+    DateTime? updatedAt,
+    this.storagePath,
+    this.sizeBytes,
+    this.cloudSynced = false,
+    this.overQuotaDeadline,
+  }) : updatedAt = updatedAt ?? createdAt;
 
   String get fileName => filePath.split(RegExp(r'[/\\]')).last;
   String get title =>
@@ -51,6 +68,11 @@ class RecordingModel {
         'folderId': folderId,
         'transcription': transcription,
         'summary': summary,
+        'updatedAt': updatedAt.toIso8601String(),
+        'storagePath': storagePath,
+        'sizeBytes': sizeBytes,
+        'cloudSynced': cloudSynced,
+        'overQuotaDeadline': overQuotaDeadline?.toIso8601String(),
       };
 
   factory RecordingModel.fromJson(Map<String, dynamic> json) {
@@ -73,6 +95,15 @@ class RecordingModel {
       folderId: json['folderId'] as String?,
       transcription: json['transcription'] as String?,
       summary: json['summary'] as String?,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'] as String)
+          : null,
+      storagePath: json['storagePath'] as String?,
+      sizeBytes: json['sizeBytes'] as int?,
+      cloudSynced: json['cloudSynced'] as bool? ?? false,
+      overQuotaDeadline: json['overQuotaDeadline'] != null
+          ? DateTime.tryParse(json['overQuotaDeadline'] as String)
+          : null,
     );
   }
 }

@@ -1,7 +1,13 @@
 param(
   [string]$BackendBaseUrl,
 
-  [string]$AppClientToken
+  [string]$AppClientToken,
+
+  [string]$SupabaseUrl,
+
+  [string]$SupabaseAnonKey,
+
+  [string]$GoogleWebClientId
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,9 +47,30 @@ if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
   $AppClientToken = $line.Substring("APP_CLIENT_TOKEN=".Length).Trim()
 }
 
+function Read-BackendEnvValue($key) {
+  $envPath = "C:\dev1\audio_recorder_app\backend\.env"
+  if (!(Test-Path $envPath)) { return "" }
+  $line = Get-Content $envPath |
+    Where-Object { $_ -match "^$key=" } |
+    Select-Object -First 1
+  if ([string]::IsNullOrWhiteSpace($line)) { return "" }
+  return $line.Substring($key.Length + 1).Trim()
+}
+
+if ([string]::IsNullOrWhiteSpace($SupabaseUrl)) {
+  $SupabaseUrl = Read-BackendEnvValue "SUPABASE_URL"
+}
+
+if ([string]::IsNullOrWhiteSpace($SupabaseAnonKey)) {
+  $SupabaseAnonKey = Read-BackendEnvValue "SUPABASE_ANON_KEY"
+}
+
 Write-Host "Backend utilise par l'app: $BackendBaseUrl"
 Write-Host "Token app: charge depuis backend\.env"
 
 & "C:\dev1\Flutter\flutter\bin\flutter.bat" run `
   "--dart-define=BACKEND_BASE_URL=$BackendBaseUrl" `
-  "--dart-define=APP_CLIENT_TOKEN=$AppClientToken"
+  "--dart-define=APP_CLIENT_TOKEN=$AppClientToken" `
+  "--dart-define=SUPABASE_URL=$SupabaseUrl" `
+  "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey" `
+  "--dart-define=GOOGLE_WEB_CLIENT_ID=$GoogleWebClientId"

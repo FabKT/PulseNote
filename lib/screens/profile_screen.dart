@@ -13,6 +13,11 @@ class ProfileScreen extends StatelessWidget {
     return Consumer<AppState>(
       builder: (_, state, __) {
         final user = AuthService.currentUser;
+        final metadata = user?.userMetadata ?? const {};
+        final photoUrl =
+            (metadata['avatar_url'] ?? metadata['picture']) as String?;
+        final displayName =
+            (metadata['full_name'] ?? metadata['name']) as String?;
         final favorites = state.recordings.where((r) => r.isFavorite).length;
         final transcribed =
             state.recordings.where((r) => r.transcription != null).length;
@@ -36,10 +41,9 @@ class ProfileScreen extends StatelessWidget {
                   CircleAvatar(
                     radius: 28,
                     backgroundColor: AppTheme.primary,
-                    backgroundImage: user?.photoURL == null
-                        ? null
-                        : NetworkImage(user!.photoURL!),
-                    child: user?.photoURL == null
+                    backgroundImage:
+                        photoUrl == null ? null : NetworkImage(photoUrl),
+                    child: photoUrl == null
                         ? const Icon(
                             Icons.person_rounded,
                             color: Color(0xFF04211F),
@@ -52,8 +56,8 @@ class ProfileScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          user?.displayName?.trim().isNotEmpty == true
-                              ? user!.displayName!
+                          displayName?.trim().isNotEmpty == true
+                              ? displayName!
                               : 'Utilisateur Ultimate Audio Recorder',
                           style: const TextStyle(
                             color: AppTheme.text,

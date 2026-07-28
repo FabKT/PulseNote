@@ -8,7 +8,11 @@ param(
 
   [string]$OpenAiApiKey,
 
-  [string]$AppClientToken
+  [string]$AppClientToken,
+
+  [string]$SupabaseUrl,
+
+  [string]$SupabaseAnonKey
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,6 +65,18 @@ if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
   $AppClientToken = Read-EnvValue "APP_CLIENT_TOKEN"
 }
 
+if ([string]::IsNullOrWhiteSpace($SupabaseUrl)) {
+  $SupabaseUrl = Read-EnvValue "SUPABASE_URL"
+}
+
+if ([string]::IsNullOrWhiteSpace($SupabaseAnonKey)) {
+  $SupabaseAnonKey = Read-EnvValue "SUPABASE_ANON_KEY"
+}
+
+if ([string]::IsNullOrWhiteSpace($SupabaseUrl) -or [string]::IsNullOrWhiteSpace($SupabaseAnonKey)) {
+  throw "SUPABASE_URL et SUPABASE_ANON_KEY sont requis (backend\.env ou parametres -SupabaseUrl/-SupabaseAnonKey)."
+}
+
 gcloud config set project $ProjectId
 
 gcloud services enable `
@@ -78,7 +94,7 @@ gcloud run deploy $ServiceName `
   --region $Region `
   --source "backend" `
   --allow-unauthenticated `
-  --set-env-vars "TRANSCRIPTION_MODEL=gpt-4o-transcribe,REALTIME_TRANSCRIPTION_MODEL=gpt-realtime-whisper,SUMMARY_MODEL=gpt-4.1-mini,DEFAULT_LANGUAGE=fr" `
+  --set-env-vars "TRANSCRIPTION_MODEL=gpt-4o-transcribe,REALTIME_TRANSCRIPTION_MODEL=gpt-realtime-whisper,SUMMARY_MODEL=gpt-4.1-mini,DEFAULT_LANGUAGE=fr,SUPABASE_URL=$SupabaseUrl,SUPABASE_ANON_KEY=$SupabaseAnonKey" `
   --set-secrets "OPENAI_API_KEY=pulsenote-openai-api-key:latest,APP_CLIENT_TOKEN=pulsenote-app-client-token:latest"
 
 $url = gcloud run services describe $ServiceName `

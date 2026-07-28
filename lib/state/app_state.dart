@@ -13,12 +13,14 @@ import '../models/keyword_model.dart';
 import '../models/recording_model.dart';
 import '../models/schedule_model.dart';
 import '../models/secure_folder_model.dart';
+import '../models/subscription_tier.dart';
 import '../services/audio_service.dart';
 import '../services/foreground_service.dart';
 import '../services/keyword_detection_service.dart';
 import '../services/media_export_service.dart';
 import '../services/purchase_service.dart';
 import '../services/schedule_service.dart';
+import '../services/sync_service.dart';
 import '../services/transcription_service.dart';
 import '../services/summary_service.dart';
 
@@ -33,7 +35,7 @@ class AppState extends ChangeNotifier {
   List<RecordingModel> _recordings = [];
   List<SecureFolderModel> _folders = [];
   List<AudioPlaybackScheduleModel> _audioPlaybackSchedules = [];
-  bool _isPremium = false;
+  SubscriptionTier _tier = SubscriptionTier.free;
   String? _currentRecordingPath;
   String _currentTriggerSource = 'manual';
   DateTime? _recordingStartTime;
@@ -49,6 +51,7 @@ class AppState extends ChangeNotifier {
   final SummaryService _summary = SummaryService();
   final MediaExportService _mediaExport = MediaExportService();
   final PurchaseService _purchase = PurchaseService();
+  late final SyncService _sync;
   final AudioPlayer _scheduledAudioPlayer = AudioPlayer();
   Timer? _scheduleTimer;
   Timer? _amplitudeTimer;
@@ -66,16 +69,21 @@ class AppState extends ChangeNotifier {
   List<SecureFolderModel> get folders => List.unmodifiable(_folders);
   List<AudioPlaybackScheduleModel> get audioPlaybackSchedules =>
       List.unmodifiable(_audioPlaybackSchedules);
-  bool get isPremium => _isPremium;
+  SubscriptionTier get tier => _tier;
   bool get purchaseAvailable => _purchase.available;
   bool get purchaseLoading => _purchase.loading;
   bool get purchasePending => _purchase.purchasePending;
   String? get purchaseError => _purchase.errorMessage;
-  String get premiumPrice => _purchase.premiumPrice;
-  int get freeRecordingLimit => 5;
-  int get remainingFreeRecordings =>
-      (_isPremium ? 999 : freeRecordingLimit - _recordings.length)
-          .clamp(0, 999);
+  String priceFor(SubscriptionTier t) => _purchase.priceFor(t);
+  int get freeStorageQuotaBytes => BillingConfig.freeStorageQuotaBytes;
+  int get cloudUsedBytes => _recordings
+      .where((r) => r.cloudSynced)
+      .fold(0, (sum, r) => sum + (r.sizeBytes ?? 0));
+  bool get isOverQuota =>
+      _tier == SubscriptionTier.free &&
+      cloudUsedBytes >= freeStorageQuotaBytes;
+  List<RecordingModel> get overQuotaRecordings =>
+      _recordings.where((r) => r.overQuotaDeadline != null).toList();
   bool get canEnableKeywordTrigger => _keywords.isNotEmpty;
   int get keywordCount => _keywords.length;
   double get currentAudioLevel => _currentAudioLevel;
@@ -88,32 +96,129 @@ class AppState extends ChangeNotifier {
   static const String importedAudioSource = 'imported';
   static const String mp4ToMp3AudioSource = 'mp4_to_mp3';
 
-  Future<void> setPremiumEnabled(bool enabled) async {
-    _isPremium = enabled;
+  Future<void> setTier(SubscriptionTier newTier) async {
+    if (newTier.index <= _tier.index) {
+      _tier = newTier;
+    } else {
+      _tier = newTier;
+      await _retryOverQuotaRecordings();
+    }
     final p = await SharedPreferences.getInstance();
-    await p.setBool(BillingConfig.premiumEntitlementKey, enabled);
+    await p.setInt(BillingConfig.subscriptionTierKey, _tier.index);
     notifyListeners();
   }
 
-  Future<void> buyPremium() => _purchase.buyPremium();
+  Future<void> buyTier(SubscriptionTier t) => _purchase.buyTier(t);
 
   Future<void> restorePremiumPurchase() => _purchase.restorePurchases();
 
   AppState() {
     _detector = KeywordDetectionService();
+    _sync = SyncService(onRecordingUploaded: _onRecordingUploaded);
     _init();
   }
 
   Future<void> _init() async {
     await _loadAll();
     await _configureScheduledAudioPlayer();
-    await _purchase.init(onPremiumUnlocked: () {
-      setPremiumEnabled(true);
+    await _purchase.init(onTierUnlocked: (unlockedTier) {
+      setTier(unlockedTier);
     });
     _purchase.addListener(notifyListeners);
     FlutterForegroundTask.addTaskDataCallback(_onForegroundTick);
     _startLocalTimer();
     notifyListeners();
+    await _sync.init();
+    await _pullRemoteData();
+  }
+
+  // Récupère les données Supabase absentes en local (connexion sur un
+  // nouvel appareil, réinstallation...). L'audio n'est pas téléchargé ici :
+  // seulement à la lecture (voir _ensureRecordingAudio).
+  Future<void> _pullRemoteData() async {
+    if (!_sync.isAvailable) return;
+    try {
+      final remoteRecordings = await _sync.pullRecordings();
+      final localIds = _recordings.map((r) => r.id).toSet();
+      final newRecordings =
+          remoteRecordings.where((r) => !localIds.contains(r.id));
+      if (newRecordings.isNotEmpty) {
+        _recordings.addAll(newRecordings);
+        _recordings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      }
+
+      final remoteFolders = await _sync.pullFolders();
+      final localFolderIds = _folders.map((f) => f.id).toSet();
+      _folders.addAll(
+        remoteFolders.where((f) => !localFolderIds.contains(f.id)),
+      );
+
+      final remoteKeywords = await _sync.pullKeywords();
+      final localKeywordIds = _keywords.map((k) => k.id).toSet();
+      _keywords.addAll(
+        remoteKeywords.where((k) => !localKeywordIds.contains(k.id)),
+      );
+
+      final remoteSchedules = await _sync.pullSchedules();
+      final localScheduleIds = _schedules.map((s) => s.id).toSet();
+      _schedules.addAll(
+        remoteSchedules.where((s) => !localScheduleIds.contains(s.id)),
+      );
+
+      final remotePlaybackSchedules = await _sync.pullAudioPlaybackSchedules();
+      final localPlaybackIds =
+          _audioPlaybackSchedules.map((s) => s.id).toSet();
+      _audioPlaybackSchedules.addAll(
+        remotePlaybackSchedules
+            .where((s) => !localPlaybackIds.contains(s.id)),
+      );
+
+      await _saveRecordings();
+      await _saveFolders();
+      await _saveKeywords();
+      await _saveSchedules();
+      await _saveAudioPlaybackSchedules();
+      notifyListeners();
+    } catch (_) {
+      // Pas de réseau ou Supabase indisponible : on continue avec les
+      // données locales, un prochain démarrage réessaiera.
+    }
+  }
+
+  // Télécharge l'audio depuis Supabase Storage si l'enregistrement provient
+  // d'un autre appareil et n'a pas encore de copie locale.
+  Future<bool> _ensureRecordingAudio(RecordingModel recording) async {
+    if (recording.filePath.isNotEmpty && await File(recording.filePath).exists()) {
+      return true;
+    }
+    if (recording.storagePath == null) return false;
+    final dir = await getApplicationDocumentsDirectory();
+    final ext = recording.storagePath!.split('.').last;
+    final targetPath = '${dir.path}/synced_audio/${recording.id}.$ext';
+    final downloaded =
+        await _sync.downloadRecordingAudio(recording, targetPath);
+    if (downloaded == null) return false;
+    final i = _recordings.indexWhere((r) => r.id == recording.id);
+    if (i != -1) {
+      _recordings[i] = RecordingModel(
+        id: recording.id,
+        filePath: downloaded,
+        createdAt: recording.createdAt,
+        duration: recording.duration,
+        triggerSource: recording.triggerSource,
+        waveform: recording.waveform,
+        displayName: recording.displayName,
+        isFavorite: recording.isFavorite,
+        folderId: recording.folderId,
+        transcription: recording.transcription,
+        summary: recording.summary,
+        updatedAt: recording.updatedAt,
+        storagePath: recording.storagePath,
+      );
+      await _saveRecordings();
+      notifyListeners();
+    }
+    return true;
   }
 
   Future<void> _configureScheduledAudioPlayer() async {
@@ -218,10 +323,7 @@ class AppState extends ChangeNotifier {
       _recordings.insert(0, rec);
       _lastCreatedRecordingId = rec.id;
       _createdRecordingSignal++;
-      if (!_isPremium && _recordings.length > freeRecordingLimit) {
-        final removed = _recordings.removeLast();
-        await _audio.deleteFile(removed.filePath);
-      }
+      await _applyQuotaAndSync(rec);
       await _saveRecordings();
       await _saveRecordingToGallerySilently(rec);
     }
@@ -306,6 +408,7 @@ class AppState extends ChangeNotifier {
 
   void _checkSchedules() {
     _checkAudioPlaybackSchedules();
+    unawaited(_checkOverQuotaExpirations());
     if (_status == AppStatus.idle || _recordingTransitionInProgress) return;
 
     final activeAuto = _scheduler.findActiveSchedule(
@@ -465,6 +568,7 @@ class AppState extends ChangeNotifier {
     if (_keywords.length >= maxKeywords) return;
     _keywords.add(keyword);
     await _saveKeywords();
+    unawaited(_sync.upsertKeyword(keyword));
     notifyListeners();
   }
 
@@ -473,6 +577,7 @@ class AppState extends ChangeNotifier {
     if (i == -1) return;
     _keywords[i] = keyword;
     await _saveKeywords();
+    unawaited(_sync.upsertKeyword(keyword));
     notifyListeners();
   }
 
@@ -485,6 +590,10 @@ class AppState extends ChangeNotifier {
         .toList();
     await _saveKeywords();
     await _saveSchedules();
+    unawaited(_sync.deleteKeyword(id));
+    for (final s in _schedules) {
+      unawaited(_sync.upsertSchedule(s));
+    }
     notifyListeners();
   }
 
@@ -505,12 +614,14 @@ class AppState extends ChangeNotifier {
   Future<void> addSchedule(ScheduleModel schedule) async {
     _schedules.add(schedule);
     await _saveSchedules();
+    unawaited(_sync.upsertSchedule(schedule));
     notifyListeners();
   }
 
   Future<void> removeSchedule(String id) async {
     _schedules.removeWhere((s) => s.id == id);
     await _saveSchedules();
+    unawaited(_sync.deleteSchedule(id));
     notifyListeners();
   }
 
@@ -519,6 +630,7 @@ class AppState extends ChangeNotifier {
     if (i == -1) return;
     _schedules[i] = schedule;
     await _saveSchedules();
+    unawaited(_sync.upsertSchedule(schedule));
     notifyListeners();
   }
 
@@ -527,6 +639,7 @@ class AppState extends ChangeNotifier {
     if (i == -1) return;
     _schedules[i] = _schedules[i].copyWith(isActive: !_schedules[i].isActive);
     await _saveSchedules();
+    unawaited(_sync.upsertSchedule(_schedules[i]));
     notifyListeners();
   }
 
@@ -536,10 +649,12 @@ class AppState extends ChangeNotifier {
     final i = _recordings.indexWhere((r) => r.id == id);
     if (i == -1) return;
     await _audio.deleteFile(_recordings[i].filePath);
+    final removedStoragePath = _recordings[i].storagePath;
     _recordings.removeAt(i);
     _audioPlaybackSchedules.removeWhere((s) => s.recordingId == id);
     await _saveRecordings();
     await _saveAudioPlaybackSchedules();
+    unawaited(_sync.deleteRecording(id, storagePath: removedStoragePath));
     notifyListeners();
   }
 
@@ -547,7 +662,9 @@ class AppState extends ChangeNotifier {
     final i = _recordings.indexWhere((r) => r.id == id);
     if (i == -1) return;
     _recordings[i].isFavorite = !_recordings[i].isFavorite;
+    _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
+    unawaited(_sync.upsertRecording(_recordings[i]));
     notifyListeners();
   }
 
@@ -560,7 +677,9 @@ class AppState extends ChangeNotifier {
     if (i == -1) return;
     _recordings[i].transcription = transcription;
     _recordings[i].summary = summary;
+    _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
+    unawaited(_sync.upsertRecording(_recordings[i]));
     notifyListeners();
   }
 
@@ -569,7 +688,9 @@ class AppState extends ChangeNotifier {
     if (i == -1) return;
     final cleanName = name?.trim() ?? '';
     _recordings[i].displayName = cleanName.isEmpty ? null : cleanName;
+    _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
+    unawaited(_sync.upsertRecording(_recordings[i]));
     notifyListeners();
   }
 
@@ -597,25 +718,82 @@ class AppState extends ChangeNotifier {
       displayName: cleanName,
     );
     _recordings.insert(0, recording);
+    await _applyQuotaAndSync(recording);
     await _saveRecordings();
     notifyListeners();
     return recording;
+  }
+
+  // Calcule la taille locale de l'enregistrement puis, si le palier Gratuit
+  // dépasserait son quota de sauvegarde cloud (500 Mo), le laisse en local
+  // uniquement avec une échéance de suppression ; sinon lance la sync.
+  Future<void> _applyQuotaAndSync(RecordingModel rec) async {
+    try {
+      final file = File(rec.filePath);
+      if (await file.exists()) rec.sizeBytes = await file.length();
+    } catch (_) {
+      // Taille indisponible : on synchronisera quand même, tant pis pour
+      // le calcul de quota qui restera légèrement optimiste.
+    }
+
+    if (_tier == SubscriptionTier.free &&
+        cloudUsedBytes + (rec.sizeBytes ?? 0) > freeStorageQuotaBytes) {
+      rec.overQuotaDeadline = DateTime.now().add(
+        BillingConfig.overQuotaGracePeriod,
+      );
+      return;
+    }
+
+    unawaited(_sync.upsertRecording(rec));
+  }
+
+  void _onRecordingUploaded(String recordingId) {
+    final i = _recordings.indexWhere((r) => r.id == recordingId);
+    if (i == -1) return;
+    _recordings[i].cloudSynced = true;
+    unawaited(_saveRecordings());
+    notifyListeners();
+  }
+
+  // Relance la synchronisation des enregistrements laissés en local suite à
+  // un dépassement de quota, après un passage à un palier payant.
+  Future<void> _retryOverQuotaRecordings() async {
+    final pending = _recordings.where((r) => r.overQuotaDeadline != null);
+    for (final rec in pending) {
+      rec.overQuotaDeadline = null;
+      unawaited(_sync.upsertRecording(rec));
+    }
+    await _saveRecordings();
+  }
+
+  // Supprime localement les enregistrements dont le délai de grâce (3 jours
+  // par défaut) hors quota est dépassé sans avoir été exportés ni
+  // synchronisés (voir _applyQuotaAndSync).
+  Future<void> _checkOverQuotaExpirations() async {
+    final now = DateTime.now();
+    final expired = _recordings
+        .where((r) =>
+            r.overQuotaDeadline != null && now.isAfter(r.overQuotaDeadline!))
+        .map((r) => r.id)
+        .toList();
+    for (final id in expired) {
+      await deleteRecording(id);
+    }
   }
 
   Future<void> createFolder({required String name, String? pin}) async {
     final cleanName = name.trim();
     final cleanPin = pin?.trim() ?? '';
     if (cleanName.isEmpty) return;
-    _folders.insert(
-      0,
-      SecureFolderModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        name: cleanName,
-        pinHash: cleanPin.isEmpty ? null : SecureFolderModel.hashPin(cleanPin),
-        createdAt: DateTime.now(),
-      ),
+    final folder = SecureFolderModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: cleanName,
+      pinHash: cleanPin.isEmpty ? null : SecureFolderModel.hashPin(cleanPin),
+      createdAt: DateTime.now(),
     );
+    _folders.insert(0, folder);
     await _saveFolders();
+    unawaited(_sync.upsertFolder(folder));
     notifyListeners();
   }
 
@@ -626,6 +804,7 @@ class AppState extends ChangeNotifier {
     }
     await _saveFolders();
     await _saveRecordings();
+    unawaited(_sync.deleteFolder(id));
     notifyListeners();
   }
 
@@ -642,7 +821,9 @@ class AppState extends ChangeNotifier {
     final i = _recordings.indexWhere((r) => r.id == recordingId);
     if (i == -1) return;
     _recordings[i].folderId = folderId;
+    _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
+    unawaited(_sync.upsertRecording(_recordings[i]));
     notifyListeners();
   }
 
@@ -659,18 +840,17 @@ class AppState extends ChangeNotifier {
     List<int> weekdays = const [],
   }) async {
     if (_recordingById(recordingId) == null) return;
-    _audioPlaybackSchedules.insert(
-      0,
-      AudioPlaybackScheduleModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        recordingId: recordingId,
-        time: time,
-        recurrence: recurrence,
-        date: date,
-        weekdays: weekdays,
-      ),
+    final schedule = AudioPlaybackScheduleModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      recordingId: recordingId,
+      time: time,
+      recurrence: recurrence,
+      date: date,
+      weekdays: weekdays,
     );
+    _audioPlaybackSchedules.insert(0, schedule);
     await _saveAudioPlaybackSchedules();
+    unawaited(_sync.upsertAudioPlaybackSchedule(schedule));
     notifyListeners();
   }
 
@@ -682,6 +862,7 @@ class AppState extends ChangeNotifier {
       isActive: !schedule.isActive,
     );
     await _saveAudioPlaybackSchedules();
+    unawaited(_sync.upsertAudioPlaybackSchedule(_audioPlaybackSchedules[i]));
     notifyListeners();
   }
 
@@ -692,12 +873,14 @@ class AppState extends ChangeNotifier {
     if (i == -1) return;
     _audioPlaybackSchedules[i] = schedule;
     await _saveAudioPlaybackSchedules();
+    unawaited(_sync.upsertAudioPlaybackSchedule(schedule));
     notifyListeners();
   }
 
   Future<void> deleteAudioPlaybackSchedule(String id) async {
     _audioPlaybackSchedules.removeWhere((s) => s.id == id);
     await _saveAudioPlaybackSchedules();
+    unawaited(_sync.deleteAudioPlaybackSchedule(id));
     notifyListeners();
   }
 
@@ -708,10 +891,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> playRecordingNow(String recordingId) async {
     final recording = _recordingById(recordingId);
-    if (recording == null || !await File(recording.filePath).exists()) return;
+    if (recording == null) return;
+    if (!await _ensureRecordingAudio(recording)) return;
+    final refreshed = _recordingById(recordingId) ?? recording;
     await _scheduledAudioPlayer.stop();
     await _scheduledAudioPlayer.play(
-      DeviceFileSource(recording.filePath),
+      DeviceFileSource(refreshed.filePath),
       mode: PlayerMode.mediaPlayer,
     );
   }
@@ -721,9 +906,12 @@ class AppState extends ChangeNotifier {
   Future<void> transcribeRecording(String id) async {
     final i = _recordings.indexWhere((r) => r.id == id);
     if (i == -1) return;
+    await _ensureRecordingAudio(_recordings[i]);
     _recordings[i].transcription =
         await _transcription.transcribeAudio(_recordings[i].filePath);
+    _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
+    unawaited(_sync.upsertRecording(_recordings[i]));
     notifyListeners();
   }
 
@@ -732,7 +920,9 @@ class AppState extends ChangeNotifier {
     if (i == -1 || _recordings[i].transcription == null) return;
     _recordings[i].summary =
         await _summary.summarizeText(_recordings[i].transcription!);
+    _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
+    unawaited(_sync.upsertRecording(_recordings[i]));
     notifyListeners();
   }
 
@@ -825,9 +1015,11 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadAll() async {
     final p = await SharedPreferences.getInstance();
-    _isPremium = p.getBool(BillingConfig.premiumEntitlementKey) ??
-        p.getBool(BillingConfig.legacyDevEntitlementKey) ??
-        false;
+    final legacyPremium = p.getBool(BillingConfig.legacyDevEntitlementKey);
+    final storedTierIndex = p.getInt(BillingConfig.subscriptionTierKey);
+    _tier = storedTierIndex != null
+        ? SubscriptionTier.values[storedTierIndex]
+        : (legacyPremium == true ? SubscriptionTier.pro : SubscriptionTier.free);
 
     final kj = p.getString('keywords_v2');
     if (kj != null) {
@@ -872,6 +1064,7 @@ class AppState extends ChangeNotifier {
     _detector.stop();
     _purchase.removeListener(notifyListeners);
     _purchase.dispose();
+    _sync.dispose();
     _scheduledAudioPlayer.dispose();
     _audio.dispose();
     super.dispose();

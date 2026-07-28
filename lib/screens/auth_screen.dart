@@ -1,6 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/supabase_config.dart';
 import '../services/auth_service.dart';
 import '../ui/app_theme.dart';
 
@@ -129,8 +130,8 @@ class _AuthScreenState extends State<AuthScreen> {
           password: _password.text,
         );
       }
-    } on FirebaseAuthException catch (error) {
-      _showError(_friendlyFirebaseError(error));
+    } on AuthException catch (error) {
+      _showError(_friendlySupabaseError(error));
     } catch (error) {
       _showError(error.toString());
     } finally {
@@ -142,8 +143,8 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _loading = true);
     try {
       await AuthService.signInWithGoogle();
-    } on FirebaseAuthException catch (error) {
-      _showError(_friendlyFirebaseError(error));
+    } on AuthException catch (error) {
+      _showError(_friendlySupabaseError(error));
     } catch (error) {
       _showError(error.toString());
     } finally {
@@ -158,20 +159,20 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  String _friendlyFirebaseError(FirebaseAuthException error) {
+  String _friendlySupabaseError(AuthException error) {
     switch (error.code) {
-      case 'invalid-email':
-        return 'Adresse e-mail invalide.';
-      case 'user-not-found':
-      case 'wrong-password':
-      case 'invalid-credential':
+      case 'invalid_credentials':
         return 'Identifiants incorrects.';
-      case 'email-already-in-use':
+      case 'user_already_exists':
+      case 'email_exists':
         return 'Un compte existe déjà avec cet e-mail.';
-      case 'weak-password':
+      case 'weak_password':
         return 'Le mot de passe est trop faible.';
+      case 'email_address_invalid':
+      case 'validation_failed':
+        return 'Adresse e-mail invalide.';
       default:
-        return error.message ?? 'Connexion impossible.';
+        return error.message;
     }
   }
 }
@@ -182,8 +183,13 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
+    if (!SupabaseConfig.isConfigured) return child;
+    return StreamBuilder<AuthState>(
       stream: AuthService.authStateChanges,
+      initialData: AuthState(
+        AuthChangeEvent.initialSession,
+        Supabase.instance.client.auth.currentSession,
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -193,7 +199,7 @@ class AuthGate extends StatelessWidget {
             ),
           );
         }
-        if (snapshot.data == null) return const AuthScreen();
+        if (snapshot.data?.session?.user == null) return const AuthScreen();
         return child;
       },
     );

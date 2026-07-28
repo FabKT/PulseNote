@@ -8,9 +8,9 @@ class ApiAuth {
     Map<String, String>? extra,
   }) async {
     final headers = <String, String>{...?extra};
-    final firebaseToken = await AuthService.idToken();
-    if (firebaseToken != null && firebaseToken.isNotEmpty) {
-      headers['authorization'] = 'Bearer $firebaseToken';
+    final supabaseToken = await AuthService.idToken();
+    if (supabaseToken != null && supabaseToken.isNotEmpty) {
+      headers['authorization'] = 'Bearer $supabaseToken';
       return headers;
     }
     if (ApiConfig.appClientToken.isNotEmpty) {

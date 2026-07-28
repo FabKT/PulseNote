@@ -1,34 +1,50 @@
+import 'subscription_tier.dart';
+
 enum PremiumFeature {
+  continuousPlayback,
+  audioImport,
+  mp4ToMp3,
+  keywordTrigger,
+  playbackSchedule,
   recordingTranscription,
   aiSummary,
-  keywordTrigger,
-  advancedSearch,
-  advancedExports,
-  unlimitedHistory,
 }
 
 extension PremiumFeatureLabels on PremiumFeature {
+  SubscriptionTier get requiredTier => switch (this) {
+        PremiumFeature.continuousPlayback => SubscriptionTier.plus,
+        PremiumFeature.audioImport => SubscriptionTier.plus,
+        PremiumFeature.mp4ToMp3 => SubscriptionTier.plus,
+        PremiumFeature.keywordTrigger => SubscriptionTier.plus,
+        PremiumFeature.playbackSchedule => SubscriptionTier.plus,
+        PremiumFeature.recordingTranscription => SubscriptionTier.pro,
+        PremiumFeature.aiSummary => SubscriptionTier.pro,
+      };
+
   String get title => switch (this) {
+        PremiumFeature.continuousPlayback => 'Lecture continue',
+        PremiumFeature.audioImport => 'Import audio',
+        PremiumFeature.mp4ToMp3 => 'MP4 vers MP3',
+        PremiumFeature.keywordTrigger => 'Déclenchement par mots-clés',
+        PremiumFeature.playbackSchedule => 'Lecture planifiée',
         PremiumFeature.recordingTranscription => 'Transcription audio',
         PremiumFeature.aiSummary => 'Résumé IA',
-        PremiumFeature.keywordTrigger => 'Déclenchement par mots-clés',
-        PremiumFeature.advancedSearch => 'Recherche intelligente',
-        PremiumFeature.advancedExports => 'Exports avancés',
-        PremiumFeature.unlimitedHistory => 'Historique illimité',
       };
 
   String get description => switch (this) {
-        PremiumFeature.recordingTranscription =>
-          'Transformez vos fichiers audio existants en texte.',
-        PremiumFeature.aiSummary =>
-          'Générez automatiquement un résumé exploitable.',
+        PremiumFeature.continuousPlayback =>
+          'Enchaînez la lecture de vos enregistrements sans interruption.',
+        PremiumFeature.audioImport =>
+          'Importez des fichiers audio existants dans l\'app.',
+        PremiumFeature.mp4ToMp3 =>
+          'Convertissez vos vidéos MP4 en fichiers audio MP3.',
         PremiumFeature.keywordTrigger =>
           'Lancez un enregistrement quand un mot-clé est détecté.',
-        PremiumFeature.advancedSearch =>
-          'Retrouvez un passage précis dans vos transcriptions.',
-        PremiumFeature.advancedExports =>
-          'Exportez vos notes vocales en formats texte, PDF ou document.',
-        PremiumFeature.unlimitedHistory =>
-          "Conservez plus d'enregistrements et des sessions plus longues.",
+        PremiumFeature.playbackSchedule =>
+          'Programmez la lecture automatique d\'un enregistrement.',
+        PremiumFeature.recordingTranscription =>
+          'Transformez vos enregistrements en texte.',
+        PremiumFeature.aiSummary =>
+          'Générez automatiquement un résumé exploitable.',
       };
 }

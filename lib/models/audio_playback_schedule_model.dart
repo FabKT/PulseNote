@@ -12,8 +12,9 @@ class AudioPlaybackScheduleModel {
   final List<int> weekdays;
   final bool isActive;
   final String? lastPlayedDateKey;
+  final DateTime updatedAt;
 
-  const AudioPlaybackScheduleModel({
+  AudioPlaybackScheduleModel({
     required this.id,
     required this.recordingId,
     required this.time,
@@ -22,7 +23,8 @@ class AudioPlaybackScheduleModel {
     this.weekdays = const [],
     this.isActive = true,
     this.lastPlayedDateKey,
-  });
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? DateTime.now();
 
   bool shouldPlayAt(DateTime now) {
     if (!isActive) return false;
@@ -60,6 +62,7 @@ class AudioPlaybackScheduleModel {
         'weekdays': weekdays,
         'isActive': isActive,
         'lastPlayedDateKey': lastPlayedDateKey,
+        'updatedAt': updatedAt.toIso8601String(),
       };
 
   factory AudioPlaybackScheduleModel.fromJson(Map<String, dynamic> json) {
@@ -82,6 +85,9 @@ class AudioPlaybackScheduleModel {
       ),
       isActive: json['isActive'] as bool? ?? true,
       lastPlayedDateKey: json['lastPlayedDateKey'] as String?,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'] as String)
+          : null,
     );
   }
 
@@ -104,6 +110,7 @@ class AudioPlaybackScheduleModel {
         weekdays: weekdays ?? this.weekdays,
         isActive: isActive ?? this.isActive,
         lastPlayedDateKey: lastPlayedDateKey ?? this.lastPlayedDateKey,
+        updatedAt: DateTime.now(),
       );
 
   static String _weekdayLabel(int day) => switch (day) {

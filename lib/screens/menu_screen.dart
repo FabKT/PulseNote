@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app.dart';
 import '../ui/app_theme.dart';
+import '../widgets/paywall_sheet.dart';
 
 class MenuScreen extends StatelessWidget {
   const MenuScreen({super.key});
@@ -20,7 +21,7 @@ class MenuScreen extends StatelessWidget {
               title: 'Abonnez-vous Pro',
               icon: Icons.workspace_premium_rounded,
               colors: const [Color(0xFF20B8FF), Color(0xFF57D9F6)],
-              onTap: () {},
+              onTap: () => showPaywall(context),
             ),
             const SizedBox(height: 18),
             GridView.count(
@@ -50,6 +51,11 @@ class MenuScreen extends StatelessWidget {
                   icon: Icons.schedule_send_rounded,
                   title: 'Lecture\nplanifiée',
                   onTap: nav.openScheduledAudio,
+                ),
+                _MenuTile(
+                  icon: Icons.all_inclusive_rounded,
+                  title: 'Lecture\ncontinue',
+                  onTap: nav.openContinuousPlayback,
                 ),
                 _MenuTile(
                   icon: Icons.transform_rounded,

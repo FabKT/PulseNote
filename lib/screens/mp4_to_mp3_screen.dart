@@ -7,9 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../models/premium_feature.dart';
+import '../models/subscription_tier.dart';
 import '../services/media_export_service.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
+import '../widgets/feature_lock_screen.dart';
 import 'recordings_screen.dart';
 
 class Mp4ToMp3Screen extends StatefulWidget {
@@ -35,6 +38,12 @@ class _Mp4ToMp3ScreenState extends State<Mp4ToMp3Screen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!context.watch<AppState>().tier.hasMp4ToMp3) {
+      return const FeatureLockScreen(
+        feature: PremiumFeature.mp4ToMp3,
+        title: 'MP4 vers MP3',
+      );
+    }
     final selectedName = _selectedFile == null
         ? 'Aucun fichier sélectionné'
         : _fileName(_selectedFile!.path);

@@ -1,52 +1,73 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../config/supabase_config.dart';
 
 class AuthService {
   AuthService._();
 
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
-  static Stream<User?> get authStateChanges => _auth.authStateChanges();
-  static User? get currentUser => _auth.currentUser;
+  static SupabaseClient get _client => Supabase.instance.client;
+
+  static Stream<AuthState> get authStateChanges =>
+      _client.auth.onAuthStateChange;
+  static User? get currentUser => _client.auth.currentUser;
+
+  static Future<void> initializeSupabase() async {
+    await Supabase.initialize(
+      url: SupabaseConfig.url,
+      publishableKey: SupabaseConfig.anonKey,
+    );
+  }
 
   static Future<void> initializeGoogleSignIn() async {
-    await _googleSignIn.initialize();
+    await _googleSignIn.initialize(
+      serverClientId: SupabaseConfig.googleWebClientId.isEmpty
+          ? null
+          : SupabaseConfig.googleWebClientId,
+    );
   }
 
   static Future<String?> idToken() async {
-    return _auth.currentUser?.getIdToken();
+    return _client.auth.currentSession?.accessToken;
   }
 
-  static Future<UserCredential> signInWithEmail({
+  static Future<AuthResponse> signInWithEmail({
     required String email,
     required String password,
   }) {
-    return _auth.signInWithEmailAndPassword(
+    return _client.auth.signInWithPassword(
       email: email.trim(),
       password: password,
     );
   }
 
-  static Future<UserCredential> createAccountWithEmail({
+  static Future<AuthResponse> createAccountWithEmail({
     required String email,
     required String password,
   }) {
-    return _auth.createUserWithEmailAndPassword(
+    return _client.auth.signUp(
       email: email.trim(),
       password: password,
     );
   }
 
-  static Future<UserCredential> signInWithGoogle() async {
+  static Future<AuthResponse> signInWithGoogle() async {
     final account = await _googleSignIn.authenticate();
     final auth = account.authentication;
-    final credential = GoogleAuthProvider.credential(idToken: auth.idToken);
-    return _auth.signInWithCredential(credential);
+    final idToken = auth.idToken;
+    if (idToken == null) {
+      throw const AuthException('Connexion Google impossible (idToken manquant).');
+    }
+    return _client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+    );
   }
 
   static Future<void> signOut() async {
     await _googleSignIn.signOut();
-    await _auth.signOut();
+    await _client.auth.signOut();
   }
 }

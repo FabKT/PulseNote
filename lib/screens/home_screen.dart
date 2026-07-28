@@ -32,44 +32,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (recording.displayName?.trim().isNotEmpty == true) return;
       if (recording.triggerSource?.startsWith('schedule:') == true) return;
 
-      final controller = TextEditingController();
       final name = await showDialog<String>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          backgroundColor: AppTheme.surface,
-          title: const Text(
-            'Nom de l\'audio',
-            style: TextStyle(color: AppTheme.text),
-          ),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            textInputAction: TextInputAction.done,
-            style: const TextStyle(color: AppTheme.text),
-            decoration: InputDecoration(
-              hintText: 'Ex. Note rapide',
-              filled: true,
-              fillColor: AppTheme.surfaceHigh,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            onSubmitted: (value) => Navigator.pop(dialogContext, value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Plus tard'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Enregistrer'),
-            ),
-          ],
-        ),
+        builder: (_) => const _RecordingNameDialog(),
       );
-      controller.dispose();
       if (name == null || name.trim().isEmpty) return;
       await liveState.renameRecording(id, name);
     });
@@ -135,6 +101,59 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _RecordingNameDialog extends StatefulWidget {
+  const _RecordingNameDialog();
+
+  @override
+  State<_RecordingNameDialog> createState() => _RecordingNameDialogState();
+}
+
+class _RecordingNameDialogState extends State<_RecordingNameDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.surface,
+      title: const Text(
+        'Nom de l\'audio',
+        style: TextStyle(color: AppTheme.text),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.done,
+        style: const TextStyle(color: AppTheme.text),
+        decoration: InputDecoration(
+          hintText: 'Ex. Note rapide',
+          filled: true,
+          fillColor: AppTheme.surfaceHigh,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        onSubmitted: (value) => Navigator.pop(context, value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Plus tard'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Enregistrer'),
+        ),
+      ],
     );
   }
 }

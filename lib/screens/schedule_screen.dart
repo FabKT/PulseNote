@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/premium_feature.dart';
 import '../models/schedule_model.dart';
+import '../models/subscription_tier.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
+import '../widgets/paywall_sheet.dart';
 import '../widgets/schedule_card.dart';
 import '../widgets/custom_time_picker.dart';
 
@@ -49,6 +52,15 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   final mode = _tabs.index == 0
                       ? ScheduleMode.autoRecord
                       : ScheduleMode.keywordTrigger;
+
+                  if (mode == ScheduleMode.keywordTrigger &&
+                      !state.tier.hasKeywordSchedules) {
+                    return PremiumLockedScheduleStatePlaceholder(
+                      onUpgrade: () => showPaywall(context,
+                          feature: PremiumFeature.keywordTrigger),
+                    );
+                  }
+
                   final filtered =
                       state.schedules.where((s) => s.mode == mode).toList();
 
@@ -101,6 +113,12 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   }
 
   Future<void> _showCreateDialog(BuildContext ctx) async {
+    final wantsKeywordMode = _tabs.index == 1;
+    if (wantsKeywordMode &&
+        !ctx.read<AppState>().tier.hasKeywordSchedules) {
+      await showPaywall(ctx, feature: PremiumFeature.keywordTrigger);
+      return;
+    }
     await showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
@@ -408,7 +426,13 @@ class _CreateScheduleSheetState extends State<_CreateScheduleSheet> {
               icon: Icons.hearing_outlined,
               color: const Color(0xFFDB9A4A),
               selected: _mode == ScheduleMode.keywordTrigger,
-              onTap: () => setState(() => _mode = ScheduleMode.keywordTrigger),
+              onTap: () {
+                if (!context.read<AppState>().tier.hasKeywordSchedules) {
+                  showPaywall(context, feature: PremiumFeature.keywordTrigger);
+                  return;
+                }
+                setState(() => _mode = ScheduleMode.keywordTrigger);
+              },
             )),
           ]),
           const SizedBox(height: 8),

@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../config/billing_config.dart';
+import '../models/subscription_tier.dart';
 
 class PurchaseService extends ChangeNotifier {
-  static const String premiumMonthlyId = BillingConfig.premiumSubscriptionId;
-  static const Set<String> _productIds = {premiumMonthlyId};
+  static const String plusMonthlyId = BillingConfig.plusSubscriptionId;
+  static const String proMonthlyId = BillingConfig.proSubscriptionId;
+  static const Set<String> _productIds = {plusMonthlyId, proMonthlyId};
 
   final InAppPurchase _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _subscription;
@@ -16,18 +18,35 @@ class PurchaseService extends ChangeNotifier {
   bool _purchasePending = false;
   String? _errorMessage;
   List<ProductDetails> _products = [];
-  void Function()? _onPremiumUnlocked;
+  final Set<String> _ownedProductIds = {};
+  void Function(SubscriptionTier tier)? _onTierUnlocked;
 
   bool get available => _available;
   bool get loading => _loading;
   bool get purchasePending => _purchasePending;
   String? get errorMessage => _errorMessage;
-  ProductDetails? get premiumProduct =>
-      _products.where((p) => p.id == premiumMonthlyId).firstOrNull;
-  String get premiumPrice => premiumProduct?.price ?? '';
 
-  Future<void> init({required void Function() onPremiumUnlocked}) async {
-    _onPremiumUnlocked = onPremiumUnlocked;
+  ProductDetails? _productFor(String id) =>
+      _products.where((p) => p.id == id).firstOrNull;
+
+  ProductDetails? productFor(SubscriptionTier tier) => switch (tier) {
+        SubscriptionTier.plus => _productFor(plusMonthlyId),
+        SubscriptionTier.pro => _productFor(proMonthlyId),
+        SubscriptionTier.free => null,
+      };
+
+  String priceFor(SubscriptionTier tier) => productFor(tier)?.price ?? '';
+
+  SubscriptionTier get ownedTier {
+    if (_ownedProductIds.contains(proMonthlyId)) return SubscriptionTier.pro;
+    if (_ownedProductIds.contains(plusMonthlyId)) return SubscriptionTier.plus;
+    return SubscriptionTier.free;
+  }
+
+  Future<void> init({
+    required void Function(SubscriptionTier tier) onTierUnlocked,
+  }) async {
+    _onTierUnlocked = onTierUnlocked;
     _subscription = _iap.purchaseStream.listen(
       _handlePurchases,
       onDone: () => _subscription?.cancel(),
@@ -62,22 +81,23 @@ class PurchaseService extends ChangeNotifier {
       _errorMessage = response.error!.message;
     } else if (_products.isEmpty) {
       _errorMessage =
-          'Produit Premium introuvable. Configurez $premiumMonthlyId dans Google Play Console.';
+          'Abonnements introuvables. Configurez $plusMonthlyId et $proMonthlyId dans Google Play Console.';
     }
     notifyListeners();
   }
 
-  Future<void> buyPremium() async {
-    final product = premiumProduct;
+  Future<void> buyTier(SubscriptionTier tier) async {
+    var product = productFor(tier);
     if (product == null) {
       await loadProducts();
-      if (premiumProduct == null) return;
+      product = productFor(tier);
+      if (product == null) return;
     }
     _purchasePending = true;
     _errorMessage = null;
     notifyListeners();
 
-    final param = PurchaseParam(productDetails: premiumProduct!);
+    final param = PurchaseParam(productDetails: product);
     await _iap.buyNonConsumable(purchaseParam: param);
   }
 
@@ -89,14 +109,16 @@ class PurchaseService extends ChangeNotifier {
     Future<void>.delayed(const Duration(seconds: 3), () {
       if (!_purchasePending) return;
       _purchasePending = false;
-      _errorMessage = 'Aucun abonnement Premium restauré.';
+      if (_ownedProductIds.isEmpty) {
+        _errorMessage = 'Aucun abonnement restauré.';
+      }
       notifyListeners();
     });
   }
 
   Future<void> _handlePurchases(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
-      if (purchase.productID != premiumMonthlyId) continue;
+      if (!_productIds.contains(purchase.productID)) continue;
 
       if (purchase.status == PurchaseStatus.pending) {
         _purchasePending = true;
@@ -105,7 +127,8 @@ class PurchaseService extends ChangeNotifier {
         _purchasePending = false;
       } else if (purchase.status == PurchaseStatus.purchased ||
           purchase.status == PurchaseStatus.restored) {
-        _onPremiumUnlocked?.call();
+        _ownedProductIds.add(purchase.productID);
+        _onTierUnlocked?.call(ownedTier);
         _purchasePending = false;
       } else if (purchase.status == PurchaseStatus.canceled) {
         _purchasePending = false;
