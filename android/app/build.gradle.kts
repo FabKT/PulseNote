@@ -17,7 +17,9 @@ if (hasReleaseKeystore) {
 android {
     namespace = "com.fabkt.ultimateaudiorecorder"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    // Aligne sur la version la plus haute exigee par les plugins natifs
+    // (jni, speech_to_text) : les NDK sont retrocompatibles.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

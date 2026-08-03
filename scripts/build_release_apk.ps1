@@ -34,9 +34,15 @@ if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
   $AppClientToken = $line.Substring("APP_CLIENT_TOKEN=".Length).Trim()
 }
 
-& "C:\dev1\Flutter\flutter\bin\flutter.bat" build apk --release `
+# Google Play exige un Android App Bundle (.aab) pour toute soumission de
+# production depuis 2021 - un .apk seul est refuse a l'upload sur la Play
+# Console. On construit donc un bundle, pas un APK.
+& "C:\dev1\Flutter\flutter\bin\flutter.bat" build appbundle --release `
   "--dart-define=BACKEND_BASE_URL=$BackendBaseUrl" `
   "--dart-define=APP_CLIENT_TOKEN=$AppClientToken" `
   "--dart-define=SUPABASE_URL=$SupabaseUrl" `
   "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey" `
   "--dart-define=GOOGLE_WEB_CLIENT_ID=$GoogleWebClientId"
+
+Write-Host ""
+Write-Host "Bundle genere : build\app\outputs\bundle\release\app-release.aab"
