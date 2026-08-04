@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Politique de confidentialité - Ultimate Audio Recorder</title>
+    <meta
+      name="description"
+      content="Politique de confidentialité de l'application Ultimate Audio Recorder, enregistreur audio intelligent avec transcription et résumé IA."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#080A0F" />
+    <meta
+      property="og:title"
+      content="Politique de confidentialité - Ultimate Audio Recorder"
+    />
+    <meta
+      property="og:description"
+      content="Informations sur les données traitées par Ultimate Audio Recorder: micro, enregistrements, authentification, transcription et résumé IA."
+    />
+    <meta property="og:type" content="website" />
+    <!--
+      Le CSS est volontairement intégré ici plutôt que dans un fichier séparé :
+      la page est déployée par glisser-déposer sur Netlify, et un fichier
+      externe oublié laissait le site sans aucun style.
+    -->
+    <style>
+      :root {
+        --bg: #080a0f;
+        --surface: #111722;
+        --surface-high: #182131;
+        --primary: #58d5c9;
+        --primary-deep: #0f8f87;
+        --accent: #ffb86b;
+        --text: #f3f7fa;
+        --muted: #91a0b5;
+        --line: #2a3548;
+        --shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        --radius: 18px;
+        --shell: 1120px;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f9fc;
+          --surface: #ffffff;
+          --surface-high: #eef3f8;
+          --primary: #0c7f78;
+          --primary-deep: #0c7f78;
+          --accent: #b96c12;
+          --text: #0c1421;
+          --muted: #566379;
+          --line: #dde5ee;
+          --shadow: 0 14px 34px rgba(16, 32, 56, 0.09);
+        }
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .shell {
+        width: 100%;
+        max-width: var(--shell);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      a {
+        color: var(--primary);
+      }
+
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+
+      /* ── En-tête ─────────────────────────────────────────────── */
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        min-height: 68px;
+        flex-wrap: wrap;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: inherit;
+        padding: 8px 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        flex: none;
+        border-radius: 12px;
+        background: linear-gradient(
+          140deg,
+          var(--primary),
+          var(--primary-deep)
+        );
+        color: #04211f;
+        box-shadow: var(--shadow);
+      }
+
+      .brand-mark svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .brand small {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .site-header nav {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .site-header nav a {
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        color: var(--muted);
+        padding: 8px 12px;
+        border-radius: 999px;
+        transition: color 0.15s ease, background-color 0.15s ease;
+      }
+
+      .site-header nav a:hover {
+        color: var(--text);
+        background: var(--surface-high);
+      }
+
+      /* ── Héros ───────────────────────────────────────────────── */
+
+      .hero {
+        position: relative;
+        padding: 72px 0 52px;
+        overflow: hidden;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        top: -220px;
+        left: 50%;
+        width: 760px;
+        height: 460px;
+        transform: translateX(-50%);
+        background: radial-gradient(
+          circle,
+          color-mix(in srgb, var(--primary) 22%, transparent),
+          transparent 68%
+        );
+        pointer-events: none;
+      }
+
+      .hero-grid {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 44px;
+        align-items: start;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin: 0 0 18px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: var(--primary);
+        background: color-mix(in srgb, var(--primary) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+        border-radius: 999px;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: clamp(32px, 5vw, 46px);
+        line-height: 1.12;
+        letter-spacing: -0.025em;
+        font-weight: 800;
+      }
+
+      .lead {
+        margin: 0;
+        max-width: 60ch;
+        font-size: 17px;
+        color: var(--muted);
+      }
+
+      .signal-panel {
+        display: grid;
+        gap: 2px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      .signal-row {
+        display: grid;
+        gap: 4px;
+        padding: 16px 18px;
+        background: var(--surface);
+      }
+
+      .signal-row span {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--primary);
+      }
+
+      .signal-row strong {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      /* ── Corps ───────────────────────────────────────────────── */
+
+      .content {
+        display: grid;
+        grid-template-columns: 232px minmax(0, 1fr);
+        gap: 56px;
+        align-items: start;
+        padding-bottom: 88px;
+      }
+
+      .toc {
+        position: sticky;
+        top: 92px;
+        padding: 20px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      .toc h2 {
+        margin: 0 0 12px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .toc ol {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: toc;
+        display: grid;
+        gap: 1px;
+      }
+
+      .toc li {
+        counter-increment: toc;
+      }
+
+      .toc a {
+        display: block;
+        padding: 6px 8px;
+        font-size: 13px;
+        text-decoration: none;
+        color: var(--muted);
+        border-radius: 8px;
+        transition: color 0.15s ease, background-color 0.15s ease;
+      }
+
+      .toc a::before {
+        content: counter(toc) ". ";
+        color: color-mix(in srgb, var(--primary) 70%, transparent);
+        font-weight: 700;
+      }
+
+      .toc a:hover {
+        color: var(--text);
+        background: var(--surface-high);
+      }
+
+      .policy > section {
+        padding: 30px 0;
+        border-top: 1px solid var(--line);
+        scroll-margin-top: 92px;
+      }
+
+      .policy > section:first-child {
+        padding-top: 8px;
+        border-top: 0;
+      }
+
+      .policy h2 {
+        margin: 0 0 14px;
+        font-size: 21px;
+        line-height: 1.3;
+        letter-spacing: -0.015em;
+        font-weight: 800;
+      }
+
+      .policy p {
+        margin: 0 0 14px;
+        max-width: 72ch;
+        color: color-mix(in srgb, var(--text) 86%, var(--muted));
+      }
+
+      .policy p:last-child {
+        margin-bottom: 0;
+      }
+
+      .policy ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 9px;
+        max-width: 72ch;
+      }
+
+      .policy li {
+        position: relative;
+        padding-left: 24px;
+        color: color-mix(in srgb, var(--text) 86%, var(--muted));
+      }
+
+      .policy li::before {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 11px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary);
+      }
+
+      .policy strong {
+        color: var(--text);
+      }
+
+      .callout {
+        margin: 0 0 14px;
+        padding: 16px 18px;
+        max-width: 72ch;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: 12px;
+      }
+
+      /* ── Pied de page ────────────────────────────────────────── */
+
+      .site-footer {
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .footer-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding-top: 26px;
+        padding-bottom: 26px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .footer-inner strong {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      /* ── Adaptatif ───────────────────────────────────────────── */
+
+      @media (max-width: 940px) {
+        .hero {
+          padding: 48px 0 36px;
+        }
+
+        .hero-grid,
+        .content {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 30px;
+        }
+
+        .toc {
+          position: static;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          padding: 0 18px;
+        }
+
+        .site-header nav {
+          display: none;
+        }
+      }
+
+      @media print {
+        .site-header,
+        .toc,
+        .hero::before {
+          display: none;
+        }
+
+        body {
+          background: #fff;
+          color: #000;
+        }
+
+        .content {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="Ultimate Audio Recorder">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M4 10v4M8 6v12M12 3v18M16 6v12M20 10v4" />
+            </svg>
+          </span>
+          <span>
+            <strong>Ultimate Audio Recorder</strong>
+            <small>Politique de confidentialité</small>
+          </span>
+        </a>
+        <nav aria-label="Navigation principale">
+          <a href="#donnees">Données</a>
+          <a href="#micro">Micro</a>
+          <a href="#stockage">Stockage</a>
+          <a href="#contact">Contact</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div>
+            <p class="eyebrow">Dernière mise à jour : 3 août 2026</p>
+            <h1>Politique de confidentialité</h1>
+            <p class="lead">
+              Ultimate Audio Recorder est une application d'enregistrement audio
+              intelligent qui permet de créer des enregistrements, de les
+              transcrire et de générer des résumés à l'aide de services
+              d'intelligence artificielle.
+            </p>
+          </div>
+          <div class="signal-panel" aria-label="Résumé des protections">
+            <div class="signal-row">
+              <span>Micro</span>
+              <strong>Contrôlé par l'utilisateur</strong>
+            </div>
+            <div class="signal-row">
+              <span>Audio</span>
+              <strong>Stockage local, sauvegarde cloud selon le palier</strong>
+            </div>
+            <div class="signal-row">
+              <span>IA</span>
+              <strong>Transmission selon les fonctionnalités utilisées</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="content shell">
+        <nav class="toc" aria-label="Sommaire">
+          <h2>Sommaire</h2>
+          <ol>
+            <li><a href="#responsable">Responsable</a></li>
+            <li><a href="#donnees">Données traitées</a></li>
+            <li><a href="#micro">Utilisation du micro</a></li>
+            <li><a href="#stockage">Stockage et cloud</a></li>
+            <li><a href="#transmission">Backend et IA</a></li>
+            <li><a href="#auth">Authentification</a></li>
+            <li><a href="#finalites">Finalités</a></li>
+            <li><a href="#partage">Partage</a></li>
+            <li><a href="#securite">Sécurité</a></li>
+            <li><a href="#suppression">Suppression</a></li>
+            <li><a href="#mineurs">Mineurs</a></li>
+            <li><a href="#modifications">Modifications</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ol>
+        </nav>
+
+        <article class="policy">
+          <section id="responsable">
+            <h2>1. Responsable de l'application</h2>
+            <p>
+              La présente politique décrit la manière dont l'application
+              <strong>Ultimate Audio Recorder</strong> traite les données
+              nécessaires à son fonctionnement. L'application est éditée par
+              l'éditeur indiqué sur la fiche Google Play de l'application.
+            </p>
+          </section>
+
+          <section id="donnees">
+            <h2>2. Données traitées</h2>
+            <p>
+              Selon les fonctionnalités utilisées, Ultimate Audio Recorder peut
+              traiter :
+            </p>
+            <ul>
+              <li>l'adresse email et l'identifiant de compte Supabase ;</li>
+              <li>les enregistrements audio créés par l'utilisateur ;</li>
+              <li>les mots-clés configurés dans l'application ;</li>
+              <li>les horaires de planification d'enregistrement ;</li>
+              <li>les transcriptions générées à partir des enregistrements ;</li>
+              <li>les résumés générés à partir des transcriptions ;</li>
+              <li>
+                le statut de l'abonnement (palier Gratuit, Plus ou Pro) géré via
+                Google Play Billing ;
+              </li>
+              <li>
+                des informations techniques nécessaires au fonctionnement du
+                service.
+              </li>
+            </ul>
+          </section>
+
+          <section id="micro">
+            <h2>3. Utilisation du micro</h2>
+            <p>
+              Ultimate Audio Recorder utilise le micro uniquement pour les
+              fonctionnalités liées à l'enregistrement audio. L'utilisateur peut
+              lancer un enregistrement manuellement, activer une session
+              d'écoute, ou configurer des créneaux planifiés.
+            </p>
+            <p>
+              Lorsque l'écoute ou l'enregistrement fonctionne en arrière-plan,
+              l'application utilise un service de premier plan Android avec une
+              notification persistante visible par l'utilisateur.
+            </p>
+          </section>
+
+          <section id="stockage">
+            <h2>4. Stockage local et sauvegarde cloud</h2>
+            <p>
+              Les fichiers audio créés par l'application sont d'abord stockés
+              localement sur l'appareil, afin de rester utilisables sans
+              connexion réseau. L'utilisateur peut supprimer ses enregistrements
+              depuis l'application.
+            </p>
+            <p>
+              Selon le palier d'abonnement, ces enregistrements (fichiers audio
+              et métadonnées associées) sont également sauvegardés dans une base
+              de données et un espace de stockage cloud hébergés par Supabase,
+              afin de permettre leur récupération en cas de changement
+              d'appareil.
+            </p>
+            <p class="callout">
+              Le palier Gratuit dispose d'un quota de sauvegarde cloud de 500 Mo
+              cumulés. Au-delà, un nouvel enregistrement reste uniquement sur
+              l'appareil : l'utilisateur est averti dans l'application qu'il doit
+              l'exporter ou passer à un palier payant, et l'enregistrement est
+              supprimé de l'appareil après 3 jours sans action si le quota n'a
+              pas été libéré. Les paliers payants ne sont soumis à aucun quota de
+              sauvegarde cloud.
+            </p>
+          </section>
+
+          <section id="transmission">
+            <h2>5. Transmission au backend et aux services IA</h2>
+            <p>
+              Certaines fonctionnalités nécessitent une transmission réseau. Un
+              enregistrement audio peut être envoyé au backend de l'application
+              pour être transcrit (via le service OpenAI). Une transcription peut
+              être envoyée au backend pour générer un résumé (également via
+              OpenAI). Un enregistrement peut aussi être transmis à Supabase pour
+              être sauvegardé dans le cloud, selon le palier d'abonnement.
+            </p>
+            <p>
+              Les clés d'API des services IA ne sont pas intégrées dans
+              l'application mobile. Les traitements IA sont réalisés côté backend
+              afin de protéger les secrets techniques.
+            </p>
+          </section>
+
+          <section id="auth">
+            <h2>6. Authentification</h2>
+            <p>
+              Ultimate Audio Recorder utilise Supabase Authentication pour gérer
+              la connexion des utilisateurs. Selon les méthodes activées,
+              l'utilisateur peut se connecter avec une adresse email et un mot de
+              passe ou avec Google.
+            </p>
+          </section>
+
+          <section id="finalites">
+            <h2>7. Finalités du traitement</h2>
+            <p>Les données sont utilisées pour :</p>
+            <ul>
+              <li>permettre la connexion à l'application ;</li>
+              <li>créer, afficher et supprimer des enregistrements audio ;</li>
+              <li>exécuter les créneaux d'enregistrement planifiés ;</li>
+              <li>détecter les mots-clés configurés par l'utilisateur ;</li>
+              <li>
+                transcrire l'audio lorsque l'utilisateur utilise cette
+                fonctionnalité ;
+              </li>
+              <li>
+                générer des résumés lorsque l'utilisateur utilise cette
+                fonctionnalité ;
+              </li>
+              <li>
+                sauvegarder les enregistrements dans le cloud selon le palier
+                d'abonnement et le quota disponible ;
+              </li>
+              <li>
+                gérer l'abonnement et son renouvellement via Google Play Billing ;
+              </li>
+              <li>
+                maintenir la sécurité et le bon fonctionnement technique du
+                service.
+              </li>
+            </ul>
+          </section>
+
+          <section id="partage">
+            <h2>8. Partage des données</h2>
+            <p>
+              Les données ne sont pas vendues. Elles peuvent être traitées par
+              les prestataires techniques nécessaires au fonctionnement de
+              l'application, notamment Supabase pour l'authentification et la
+              sauvegarde cloud, le backend applicatif pour la
+              transcription/résumé, OpenAI pour les traitements IA, et Google
+              Play Billing pour la gestion des abonnements.
+            </p>
+          </section>
+
+          <section id="securite">
+            <h2>9. Sécurité</h2>
+            <p>
+              Les communications réseau utilisent HTTPS ou WSS. L'accès au
+              backend est protégé par authentification Supabase et/ou par un
+              token applicatif selon la configuration du service.
+            </p>
+          </section>
+
+          <section id="suppression">
+            <h2>10. Suppression des données</h2>
+            <p>
+              L'utilisateur peut supprimer ses enregistrements depuis
+              l'application. Pour toute demande liée à la suppression d'un compte
+              ou de données traitées côté serveur, l'utilisateur peut contacter
+              l'éditeur à l'adresse
+              <a href="mailto:tayoufabiokamogne@gmail.com"
+                >tayoufabiokamogne@gmail.com</a
+              >.
+            </p>
+          </section>
+
+          <section id="mineurs">
+            <h2>11. Mineurs</h2>
+            <p>
+              Ultimate Audio Recorder n'est pas destinée spécifiquement aux
+              enfants. Si un parent ou responsable légal estime qu'un mineur a
+              transmis des données sans autorisation, il peut contacter l'éditeur
+              afin de demander leur suppression.
+            </p>
+          </section>
+
+          <section id="modifications">
+            <h2>12. Modifications</h2>
+            <p>
+              Cette politique peut être mise à jour pour refléter les évolutions
+              de l'application, du backend ou des obligations légales. La date de
+              dernière mise à jour est indiquée en haut de cette page.
+            </p>
+          </section>
+
+          <section id="contact">
+            <h2>13. Contact</h2>
+            <p>
+              Pour toute question concernant la confidentialité ou la suppression
+              de données, contactez l'éditeur à l'adresse
+              <a href="mailto:tayoufabiokamogne@gmail.com"
+                >tayoufabiokamogne@gmail.com</a
+              >.
+            </p>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <span><strong>Ultimate Audio Recorder</strong></span>
+        <span>Politique de confidentialité — 2026</span>
+      </div>
+    </footer>
+  </body>
+</html>

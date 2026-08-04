@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import multer from 'multer';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
+import admin from 'firebase-admin';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -36,6 +37,7 @@ const summaryModel = process.env.SUMMARY_MODEL || 'gpt-4.1-mini';
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
 const directTranscriptionMaxBytes = 24 * 1024 * 1024;
 const uploadMaxBytes = Number(process.env.MAX_AUDIO_UPLOAD_MB || 500) * 1024 * 1024;
 const chunkSeconds = Number(process.env.TRANSCRIPTION_CHUNK_SECONDS || 600);
@@ -49,11 +51,15 @@ if (!appClientToken || appClientToken.length < 24) {
 }
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required.');
+  console.warn(
+    'SUPABASE_URL/SUPABASE_ANON_KEY not set: Supabase-authenticated clients will be rejected (Firebase and x-app-token still work).',
+  );
 }
 
 const openai = new OpenAI({ apiKey: openaiApiKey });
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+admin.initializeApp({ projectId: firebaseProjectId });
 
 const uploadDir = path.join(os.tmpdir(), 'ultimate-audio-recorder-uploads');
 const upload = multer({
@@ -78,15 +84,30 @@ async function requireAuth(req, res, next) {
   const authorization = req.header('authorization') || '';
   const [, bearerToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
   if (bearerToken) {
+    // Deux populations de clients partagent ce backend : l'app historique
+    // (Firebase Auth) et Ultimate Audio Recorder (Supabase Auth). On tente
+    // les deux verifications avant de retomber sur le token applicatif.
     try {
-      const { data, error } = await supabase.auth.getUser(bearerToken);
-      if (error || !data?.user) {
-        throw error || new Error('No user for token.');
-      }
-      req.user = data.user;
+      req.user = await admin.auth().verifyIdToken(bearerToken);
+      req.authProvider = 'firebase';
       return next();
-    } catch (error) {
-      console.warn('Supabase token rejected:', error?.message || error);
+    } catch (firebaseError) {
+      if (supabase) {
+        try {
+          const { data, error } = await supabase.auth.getUser(bearerToken);
+          if (error || !data?.user) {
+            throw error || new Error('No user for token.');
+          }
+          req.user = data.user;
+          req.authProvider = 'supabase';
+          return next();
+        } catch (supabaseError) {
+          console.warn('Firebase token rejected:', firebaseError?.message || firebaseError);
+          console.warn('Supabase token rejected:', supabaseError?.message || supabaseError);
+        }
+      } else {
+        console.warn('Firebase token rejected:', firebaseError?.message || firebaseError);
+      }
     }
   }
 

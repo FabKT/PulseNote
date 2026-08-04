@@ -14,6 +14,35 @@ sans avoir besoin d'acheter les deux) :
 Les ID doivent être strictement identiques à ceux définis dans
 `lib/config/billing_config.dart` (`plusSubscriptionId`, `proSubscriptionId`).
 
+## Création automatisée via l'API (recommandé)
+
+Plutôt que de créer les deux abonnements à la main, `backend/scripts/create-play-subscriptions.js`
+les crée (ou les met à jour) via l'API Google Play Developer.
+
+Prérequis, à faire une seule fois dans Play Console :
+
+1. La fiche app `com.fabkt.ultimateaudiorecorder` doit déjà exister (créée
+   manuellement, même sans build téléversé).
+2. Paramètres > Accès API > créer/lier un compte de service Google Cloud,
+   puis lui donner le droit **"Gérer les commandes et abonnements"**.
+3. Télécharger la clé JSON de ce compte de service et la placer à
+   `backend/google-play-service-account.json` (jamais commité — voir
+   `.gitignore`), ou pointer `GOOGLE_PLAY_SERVICE_ACCOUNT_PATH` (dans
+   `backend/.env`) vers un autre emplacement.
+
+Puis, depuis `backend/` :
+
+```bash
+npm run play:create-subscriptions
+```
+
+Le script crée chaque abonnement en état `DRAFT` avec un prix en euros sur
+les principaux marchés européens (+ une conversion automatique pour le
+reste du monde via `otherRegionsConfig`), puis active le base plan. Si un
+produit existe déjà, il est mis à jour plutôt que recréé. Vérifier ensuite
+dans Play Console > Monétisation > Produits que tout est correct (prix,
+libellés) avant de t'appuyer dessus en production.
+
 ## Contenu par palier (pour la fiche produit / description)
 
 - **Gratuit** : enregistrements normaux, créneaux programmés (horaire),
