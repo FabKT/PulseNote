@@ -121,7 +121,7 @@ class _ContinuousPlaybackScreenState extends State<ContinuousPlaybackScreen> {
                                 ? AppTheme.primary
                                 : AppTheme.surfaceHigh,
                             foregroundColor: _playback.locked
-                                ? const Color(0xFF04211F)
+                                ? const Color(0xFF241A02)
                                 : AppTheme.textMuted,
                           ),
                         ),
@@ -182,7 +182,7 @@ class _ContinuousPlaybackScreenState extends State<ContinuousPlaybackScreen> {
                                   height: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Color(0xFF04211F),
+                                    color: Color(0xFF241A02),
                                   ),
                                 )
                               : Icon(
@@ -197,7 +197,7 @@ class _ContinuousPlaybackScreenState extends State<ContinuousPlaybackScreen> {
                           ),
                           style: FilledButton.styleFrom(
                             backgroundColor: AppTheme.primary,
-                            foregroundColor: const Color(0xFF04211F),
+                            foregroundColor: const Color(0xFF241A02),
                             textStyle: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w900,

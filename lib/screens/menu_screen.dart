@@ -20,7 +20,7 @@ class MenuScreen extends StatelessWidget {
             _HeroTile(
               title: 'Abonnez-vous Pro',
               icon: Icons.workspace_premium_rounded,
-              colors: const [Color(0xFF20B8FF), Color(0xFF57D9F6)],
+              colors: const [Color(0xFFC07C08), Color(0xFFF7C948)],
               onTap: () => showPaywall(context),
             ),
             const SizedBox(height: 18),

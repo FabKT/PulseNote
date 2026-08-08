@@ -40,6 +40,9 @@ dependencies:
   cupertino_icons: ^1.0.6
   supabase_flutter: ^2.8.0
   connectivity_plus: ^6.1.0
+  # Ouverture des pages legales depuis l'ecran Parametres. Deja tiree par
+  # supabase_flutter, mais declaree ici car on l'utilise directement.
+  url_launcher: ^6.3.0
   google_sign_in: ^7.2.0
   file_picker: ^11.0.2
   ffmpeg_kit_flutter_new: ^4.1.0
@@ -48,6 +51,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  # Genere les icones de lanceur depuis assets/icon/app_icon.png.
+  # Outil de developpement : n'est pas embarque dans l'application.
+  flutter_launcher_icons: ^0.14.1
 
 dependency_overrides:
   # record_linux v0.7.2 est incompatible avec record_platform_interface v1.5.0
@@ -56,3 +62,16 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
+
+# Regenerer apres toute modification du logo :
+#   dart run flutter_launcher_icons
+# Le fond adaptatif est noir car le logo repose deja sur un fond noir : les
+# bords se fondent, seul le carre sombre et le micro dore restent visibles
+# une fois le masque Android applique.
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 24
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"

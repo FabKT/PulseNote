@@ -271,7 +271,7 @@ class _SessionButton extends StatelessWidget {
         ),
         style: FilledButton.styleFrom(
           backgroundColor: active ? AppTheme.danger : AppTheme.primary,
-          foregroundColor: active ? Colors.white : const Color(0xFF04211F),
+          foregroundColor: active ? Colors.white : const Color(0xFF241A02),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

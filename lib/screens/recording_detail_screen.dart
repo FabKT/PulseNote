@@ -238,7 +238,7 @@ class _RecordingDetailScreenState extends State<RecordingDetailScreen> {
                               ),
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppTheme.primary,
-                                foregroundColor: const Color(0xFF04211F),
+                                foregroundColor: const Color(0xFF241A02),
                               ),
                             ),
                     ),
@@ -533,7 +533,7 @@ class _DetailAudioPlayer extends StatelessWidget {
               Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
           style: IconButton.styleFrom(
             backgroundColor: AppTheme.primary,
-            foregroundColor: const Color(0xFF04211F),
+            foregroundColor: const Color(0xFF241A02),
           ),
         ),
         const SizedBox(width: 12),

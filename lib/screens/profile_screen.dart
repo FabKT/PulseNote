@@ -46,7 +46,7 @@ class ProfileScreen extends StatelessWidget {
                     child: photoUrl == null
                         ? const Icon(
                             Icons.person_rounded,
-                            color: Color(0xFF04211F),
+                            color: Color(0xFF241A02),
                           )
                         : null,
                   ),

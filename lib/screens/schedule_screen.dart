@@ -168,7 +168,7 @@ class _Header extends StatelessWidget {
             icon: const Icon(Icons.add_alarm),
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.primary,
-              foregroundColor: const Color(0xFF04211F),
+              foregroundColor: const Color(0xFF241A02),
               padding: const EdgeInsets.symmetric(horizontal: 14),
             ),
             label: const Text('Ajouter'),

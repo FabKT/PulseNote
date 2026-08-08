@@ -55,7 +55,7 @@ class KeywordsScreen extends StatelessWidget {
             _showKeywordDialog(ctx, state);
           },
           backgroundColor: AppTheme.primary,
-          foregroundColor: const Color(0xFF04211F),
+          foregroundColor: const Color(0xFF241A02),
           icon: const Icon(Icons.add),
           label: const Text('Ajouter'),
         ),

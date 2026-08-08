@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conditions d'utilisation - Ultimate Audio Recorder</title>
+    <meta
+      name="description"
+      content="Conditions d'utilisation de l'application Ultimate Audio Recorder : compte, abonnements Plus et Pro, usage autorisé, stockage et responsabilité."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#080A0F" />
+    <meta
+      property="og:title"
+      content="Conditions d'utilisation - Ultimate Audio Recorder"
+    />
+    <meta
+      property="og:description"
+      content="Règles d'usage, abonnements et responsabilités liées à l'application Ultimate Audio Recorder."
+    />
+    <meta property="og:type" content="website" />
+    <!-- CSS intégré : la page est déployée par glisser-déposer, un fichier
+         externe oublié laisserait le site sans style. -->
+    <style>
+      :root {
+        --bg: #080a0f;
+        --surface: #111722;
+        --surface-high: #182131;
+        --primary: #f2b01e;
+        --primary-deep: #c07c08;
+        --accent: #ffb86b;
+        --text: #f3f7fa;
+        --muted: #91a0b5;
+        --line: #2a3548;
+        --shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        --radius: 18px;
+        --shell: 1120px;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f9fc;
+          --surface: #ffffff;
+          --surface-high: #eef3f8;
+          --primary: #8a6008;
+          --primary-deep: #8a6008;
+          --accent: #b96c12;
+          --text: #0c1421;
+          --muted: #566379;
+          --line: #dde5ee;
+          --shadow: 0 14px 34px rgba(16, 32, 56, 0.09);
+        }
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .shell {
+        width: 100%;
+        max-width: var(--shell);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      a {
+        color: var(--primary);
+      }
+
+      a:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        min-height: 68px;
+        flex-wrap: wrap;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: inherit;
+        padding: 8px 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        flex: none;
+        border-radius: 12px;
+        background: linear-gradient(
+          140deg,
+          var(--primary),
+          var(--primary-deep)
+        );
+        color: #241a02;
+        box-shadow: var(--shadow);
+      }
+
+      .brand-mark svg {
+        width: 22px;
+        height: 22px;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .brand small {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .site-header nav {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .site-header nav a {
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        color: var(--muted);
+        padding: 8px 12px;
+        border-radius: 999px;
+        transition: color 0.15s ease, background-color 0.15s ease;
+      }
+
+      .site-header nav a:hover {
+        color: var(--text);
+        background: var(--surface-high);
+      }
+
+      .hero {
+        position: relative;
+        padding: 72px 0 52px;
+        overflow: hidden;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        top: -220px;
+        left: 50%;
+        width: 760px;
+        height: 460px;
+        transform: translateX(-50%);
+        background: radial-gradient(
+          circle,
+          color-mix(in srgb, var(--primary) 22%, transparent),
+          transparent 68%
+        );
+        pointer-events: none;
+      }
+
+      .hero-inner {
+        position: relative;
+        max-width: 760px;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin: 0 0 18px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--primary);
+        background: color-mix(in srgb, var(--primary) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+        border-radius: 999px;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: clamp(32px, 5vw, 46px);
+        line-height: 1.12;
+        letter-spacing: -0.025em;
+        font-weight: 800;
+      }
+
+      .lead {
+        margin: 0;
+        max-width: 62ch;
+        font-size: 17px;
+        color: var(--muted);
+      }
+
+      .content {
+        display: grid;
+        grid-template-columns: 232px minmax(0, 1fr);
+        gap: 56px;
+        align-items: start;
+        padding-bottom: 88px;
+      }
+
+      .toc {
+        position: sticky;
+        top: 92px;
+        padding: 20px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+
+      .toc h2 {
+        margin: 0 0 12px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .toc ol {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: toc;
+        display: grid;
+        gap: 1px;
+      }
+
+      .toc li {
+        counter-increment: toc;
+      }
+
+      .toc a {
+        display: block;
+        padding: 6px 8px;
+        font-size: 13px;
+        text-decoration: none;
+        color: var(--muted);
+        border-radius: 8px;
+        transition: color 0.15s ease, background-color 0.15s ease;
+      }
+
+      .toc a::before {
+        content: counter(toc) ". ";
+        color: color-mix(in srgb, var(--primary) 70%, transparent);
+        font-weight: 700;
+      }
+
+      .toc a:hover {
+        color: var(--text);
+        background: var(--surface-high);
+      }
+
+      .policy > section {
+        padding: 30px 0;
+        border-top: 1px solid var(--line);
+        scroll-margin-top: 92px;
+      }
+
+      .policy > section:first-child {
+        padding-top: 8px;
+        border-top: 0;
+      }
+
+      .policy h2 {
+        margin: 0 0 14px;
+        font-size: 21px;
+        line-height: 1.3;
+        letter-spacing: -0.015em;
+        font-weight: 800;
+      }
+
+      .policy p {
+        margin: 0 0 14px;
+        max-width: 72ch;
+        color: color-mix(in srgb, var(--text) 86%, var(--muted));
+      }
+
+      .policy p:last-child {
+        margin-bottom: 0;
+      }
+
+      .policy ul {
+        margin: 0 0 14px;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 9px;
+        max-width: 72ch;
+      }
+
+      .policy li {
+        position: relative;
+        padding-left: 24px;
+        color: color-mix(in srgb, var(--text) 86%, var(--muted));
+      }
+
+      .policy li::before {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 11px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary);
+      }
+
+      .policy strong {
+        color: var(--text);
+      }
+
+      .callout {
+        margin: 0 0 14px;
+        padding: 16px 18px;
+        max-width: 72ch;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: 12px;
+      }
+
+      table {
+        width: 100%;
+        max-width: 72ch;
+        border-collapse: collapse;
+        margin: 0 0 14px;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .site-footer {
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .footer-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding-top: 26px;
+        padding-bottom: 26px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .footer-inner strong {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      @media (max-width: 940px) {
+        .hero {
+          padding: 48px 0 36px;
+        }
+
+        .content {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 30px;
+        }
+
+        .toc {
+          position: static;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          padding: 0 18px;
+        }
+
+        .site-header nav {
+          display: none;
+        }
+      }
+
+      @media print {
+        .site-header,
+        .toc,
+        .hero::before {
+          display: none;
+        }
+
+        body {
+          background: #fff;
+          color: #000;
+        }
+
+        .content {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top" aria-label="Ultimate Audio Recorder">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M4 10v4M8 6v12M12 3v18M16 6v12M20 10v4" />
+            </svg>
+          </span>
+          <span>
+            <strong>Ultimate Audio Recorder</strong>
+            <small>Conditions d'utilisation</small>
+          </span>
+        </a>
+        <nav aria-label="Navigation principale">
+          <a href="#abonnements">Abonnements</a>
+          <a href="#usage">Usage autorisé</a>
+          <a href="/">Confidentialité</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="shell hero-inner">
+          <p class="eyebrow">Dernière mise à jour : 7 août 2026</p>
+          <h1>Conditions d'utilisation</h1>
+          <p class="lead">
+            Ces conditions encadrent l'utilisation de l'application Ultimate
+            Audio Recorder. En installant ou en utilisant l'application, vous
+            les acceptez.
+          </p>
+        </div>
+      </section>
+
+      <div class="content shell">
+        <nav class="toc" aria-label="Sommaire">
+          <h2>Sommaire</h2>
+          <ol>
+            <li><a href="#objet">Objet</a></li>
+            <li><a href="#service">Le service</a></li>
+            <li><a href="#compte">Compte utilisateur</a></li>
+            <li><a href="#abonnements">Abonnements</a></li>
+            <li><a href="#usage">Usage autorisé</a></li>
+            <li><a href="#contenus">Vos contenus</a></li>
+            <li><a href="#stockage">Stockage et quota</a></li>
+            <li><a href="#ia">Limites de l'IA</a></li>
+            <li><a href="#disponibilite">Disponibilité</a></li>
+            <li><a href="#responsabilite">Responsabilité</a></li>
+            <li><a href="#resiliation">Résiliation</a></li>
+            <li><a href="#modifications">Modifications</a></li>
+            <li><a href="#droit">Droit applicable</a></li>
+          </ol>
+        </nav>
+
+        <article class="policy">
+          <section id="objet">
+            <h2>1. Objet</h2>
+            <p>
+              Les présentes conditions définissent les règles d'utilisation de
+              l'application mobile <strong>Ultimate Audio Recorder</strong>
+              (ci-après « l'application »), distribuée via Google Play. Si vous
+              n'acceptez pas ces conditions, n'utilisez pas l'application.
+            </p>
+          </section>
+
+          <section id="service">
+            <h2>2. Description du service</h2>
+            <p>L'application permet notamment de :</p>
+            <ul>
+              <li>
+                réaliser des enregistrements audio manuels ou programmés sur des
+                créneaux horaires ;
+              </li>
+              <li>
+                déclencher un enregistrement à la détection d'un mot-clé
+                (fonctionnalité des paliers payants) ;
+              </li>
+              <li>organiser les enregistrements dans des dossiers ;</li>
+              <li>
+                importer des fichiers audio, convertir des vidéos MP4 en MP3 et
+                programmer la lecture d'un enregistrement (paliers payants) ;
+              </li>
+              <li>
+                transcrire un enregistrement et en générer un résumé à l'aide de
+                services d'intelligence artificielle (palier Pro).
+              </li>
+            </ul>
+          </section>
+
+          <section id="compte">
+            <h2>3. Compte utilisateur</h2>
+            <p>
+              La création d'un compte est nécessaire pour accéder aux
+              fonctionnalités connectées. Vous êtes responsable de
+              l'exactitude des informations fournies, de la confidentialité de
+              vos identifiants et de toute activité réalisée depuis votre
+              compte.
+            </p>
+            <p>
+              Vous devez avoir l'âge légal requis dans votre pays pour conclure
+              un contrat. L'application n'est pas destinée aux enfants.
+            </p>
+          </section>
+
+          <section id="abonnements">
+            <h2>4. Abonnements et paiement</h2>
+            <p>
+              L'application propose un palier gratuit et deux abonnements
+              mensuels payants :
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Palier</th>
+                  <th>Prix</th>
+                  <th>Contenu</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Gratuit</strong></td>
+                  <td>—</td>
+                  <td>
+                    Enregistrements manuels et programmés (horaire), dossiers,
+                    500 Mo de sauvegarde cloud
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Plus</strong></td>
+                  <td>3,99 €/mois</td>
+                  <td>
+                    Lecture continue, import audio, MP4 vers MP3, déclenchement
+                    par mots-clés, lecture planifiée, sauvegarde illimitée
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Pro</strong></td>
+                  <td>8,99 €/mois</td>
+                  <td>Tout le palier Plus, plus transcription et résumé IA</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="callout">
+              <strong>Renouvellement automatique.</strong> Les abonnements sont
+              facturés via votre compte Google Play et se renouvellent
+              automatiquement à chaque période, sauf résiliation au moins 24
+              heures avant la fin de la période en cours. La gestion et la
+              résiliation s'effectuent dans Google Play &gt; Abonnements. La
+              suppression de l'application ne résilie pas l'abonnement.
+            </p>
+            <p>
+              Les prix sont indiqués toutes taxes comprises et peuvent varier
+              selon le pays. Les demandes de remboursement relèvent de la
+              politique de Google Play.
+            </p>
+          </section>
+
+          <section id="usage">
+            <h2>5. Usage autorisé</h2>
+            <p class="callout">
+              <strong>Important :</strong> l'enregistrement de conversations est
+              encadré par la loi et varie selon les pays. Dans de nombreuses
+              juridictions, enregistrer une personne à son insu est illégal.
+              Vous êtes seul responsable du respect de la législation
+              applicable, et notamment de recueillir le consentement des
+              personnes enregistrées lorsque la loi l'exige.
+            </p>
+            <p>Vous vous engagez à ne pas utiliser l'application pour :</p>
+            <ul>
+              <li>
+                enregistrer des personnes sans leur consentement lorsque celui-ci
+                est requis ;
+              </li>
+              <li>
+                porter atteinte à la vie privée, aux droits ou à la dignité
+                d'autrui ;
+              </li>
+              <li>
+                collecter des contenus illicites, diffamatoires ou
+                frauduleux ;
+              </li>
+              <li>
+                contourner les limitations techniques, les paliers d'abonnement
+                ou les mécanismes de facturation ;
+              </li>
+              <li>
+                perturber le fonctionnement du service ou de son infrastructure.
+              </li>
+            </ul>
+          </section>
+
+          <section id="contenus">
+            <h2>6. Vos contenus</h2>
+            <p>
+              Vous restez propriétaire de vos enregistrements, transcriptions et
+              résumés. L'éditeur ne revendique aucun droit de propriété sur ces
+              contenus et ne les exploite pas à d'autres fins que la fourniture
+              du service décrit dans la
+              <a href="/">politique de confidentialité</a>.
+            </p>
+          </section>
+
+          <section id="stockage">
+            <h2>7. Stockage et quota</h2>
+            <p>
+              Les enregistrements sont conservés sur votre appareil et, selon
+              votre palier, sauvegardés dans le cloud. Le palier gratuit dispose
+              d'un quota de 500 Mo de sauvegarde cloud cumulés.
+            </p>
+            <p>
+              Lorsque ce quota est atteint, un nouvel enregistrement reste
+              uniquement sur l'appareil. L'application vous en avertit : vous
+              devez alors l'exporter ou passer à un palier payant. À défaut,
+              l'enregistrement concerné est supprimé de l'appareil après 3 jours.
+            </p>
+          </section>
+
+          <section id="ia">
+            <h2>8. Limites des fonctionnalités d'IA</h2>
+            <p>
+              Les transcriptions et résumés sont générés automatiquement par des
+              modèles d'intelligence artificielle. Ils peuvent comporter des
+              erreurs, des omissions ou des contresens, en particulier sur un
+              audio bruité, plusieurs locuteurs simultanés, un vocabulaire
+              technique ou une langue peu représentée.
+            </p>
+            <p>
+              Ces résultats sont fournis à titre indicatif et ne doivent pas
+              être utilisés comme source unique dans un contexte juridique,
+              médical, financier ou tout autre contexte sensible sans
+              vérification humaine.
+            </p>
+          </section>
+
+          <section id="disponibilite">
+            <h2>9. Disponibilité du service</h2>
+            <p>
+              L'application dépend de services tiers (hébergement, fournisseurs
+              d'IA, Google Play). Son fonctionnement peut être interrompu pour
+              maintenance, mise à jour, incident technique ou décision d'un
+              prestataire. L'éditeur ne garantit pas une disponibilité
+              ininterrompue et peut faire évoluer ou retirer une fonctionnalité.
+            </p>
+          </section>
+
+          <section id="responsabilite">
+            <h2>10. Responsabilité</h2>
+            <p>
+              L'application est fournie « en l'état ». Dans les limites permises
+              par la loi, l'éditeur ne saurait être tenu responsable des pertes
+              de données, des enregistrements manqués ou incomplets, ni des
+              conséquences d'un usage contraire aux présentes conditions ou à la
+              loi applicable.
+            </p>
+            <p>
+              Il vous appartient de conserver une copie de tout enregistrement
+              important, notamment avant l'expiration du délai lié au quota de
+              stockage gratuit.
+            </p>
+            <p>
+              Rien dans ces conditions ne limite les droits que la législation
+              impérative applicable, notamment en matière de consommation, vous
+              reconnaît.
+            </p>
+          </section>
+
+          <section id="resiliation">
+            <h2>11. Résiliation</h2>
+            <p>
+              Vous pouvez cesser d'utiliser l'application à tout moment,
+              résilier votre abonnement depuis Google Play et demander la
+              suppression de votre compte en écrivant à
+              <a href="mailto:tayoufabiokamogne@gmail.com"
+                >tayoufabiokamogne@gmail.com</a
+              >.
+            </p>
+            <p>
+              L'éditeur peut suspendre ou fermer un compte en cas de
+              manquement grave aux présentes conditions, notamment en cas
+              d'usage illicite.
+            </p>
+          </section>
+
+          <section id="modifications">
+            <h2>12. Modifications des conditions</h2>
+            <p>
+              Ces conditions peuvent être mises à jour pour refléter les
+              évolutions de l'application ou des obligations légales. La date de
+              dernière mise à jour figure en haut de cette page. La poursuite de
+              l'utilisation après modification vaut acceptation.
+            </p>
+          </section>
+
+          <section id="droit">
+            <h2>13. Droit applicable et contact</h2>
+            <p>
+              Les présentes conditions sont soumises au droit belge, sans
+              préjudice des dispositions protectrices impératives applicables
+              dans votre pays de résidence.
+            </p>
+            <p>
+              Pour toute question :
+              <a href="mailto:tayoufabiokamogne@gmail.com"
+                >tayoufabiokamogne@gmail.com</a
+              >.
+            </p>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <span><strong>Ultimate Audio Recorder</strong></span>
+        <span>Conditions d'utilisation — 2026</span>
+      </div>
+    </footer>
+  </body>
+</html>

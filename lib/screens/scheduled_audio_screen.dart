@@ -59,7 +59,7 @@ class ScheduledAudioScreen extends StatelessWidget {
                   label: const Text('Ajouter'),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTheme.primary,
-                    foregroundColor: const Color(0xFF04211F),
+                    foregroundColor: const Color(0xFF241A02),
                   ),
                 ),
               ]),
@@ -530,7 +530,7 @@ class _CreateScheduledPlaybackSheetState
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
                   backgroundColor: AppTheme.primary,
-                  foregroundColor: const Color(0xFF04211F),
+                  foregroundColor: const Color(0xFF241A02),
                 ),
                 child: Text(
                   widget.scheduleToEdit == null ? 'Créer' : 'Enregistrer',

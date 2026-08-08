@@ -147,14 +147,14 @@ class _Mp4ToMp3ScreenState extends State<Mp4ToMp3Screen> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF04211F),
+                          color: Color(0xFF241A02),
                         ),
                       )
                     : const Icon(Icons.audio_file_rounded),
                 label: Text(_converting ? 'Conversion...' : 'Convertir en MP3'),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppTheme.primary,
-                  foregroundColor: const Color(0xFF04211F),
+                  foregroundColor: const Color(0xFF241A02),
                   textStyle: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,

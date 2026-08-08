@@ -283,7 +283,7 @@ class _RecordingCardState extends State<RecordingCard> {
                     ),
                     style: IconButton.styleFrom(
                       backgroundColor: AppTheme.primary,
-                      foregroundColor: const Color(0xFF04211F),
+                      foregroundColor: const Color(0xFF241A02),
                     ),
                     tooltip: _isPlaying ? 'Pause' : 'Lire',
                   ),

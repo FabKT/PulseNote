@@ -5,8 +5,13 @@ class AppTheme {
   static const Color surface = Color(0xFF111722);
   static const Color surfaceHigh = Color(0xFF182131);
   static const Color surfaceMuted = Color(0xFF202A3B);
-  static const Color primary = Color(0xFF58D5C9);
-  static const Color primaryDeep = Color(0xFF0F8F87);
+  // Or repris du logo de l'application (micro dore sur fond noir) : jaune
+  // dore pour les actions et etats actifs, ambre profond pour les fonds
+  // pleins et degrades.
+  static const Color primary = Color(0xFFF2B01E);
+  static const Color primaryDeep = Color(0xFFC07C08);
+  // Texte pose sur un aplat de `primary` : brun tres fonce, lisible sur l'or.
+  static const Color onPrimary = Color(0xFF241A02);
   static const Color accent = Color(0xFFFFB86B);
   static const Color danger = Color(0xFFFF5C7A);
   static const Color blue = Color(0xFF72A7FF);
@@ -60,7 +65,7 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: primary,
-          foregroundColor: const Color(0xFF04211F),
+          foregroundColor: onPrimary,
           textStyle: const TextStyle(fontWeight: FontWeight.w800),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

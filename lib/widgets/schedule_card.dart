@@ -133,7 +133,7 @@ class ScheduleCard extends StatelessWidget {
                     .map((k) => Chip(
                           label: Text(k.text,
                               style: const TextStyle(
-                                color: Color(0xFF04211F),
+                                color: Color(0xFF241A02),
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
                               )),

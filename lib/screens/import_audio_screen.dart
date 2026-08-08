@@ -140,14 +140,14 @@ class _ImportAudioScreenState extends State<ImportAudioScreen> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF04211F),
+                          color: Color(0xFF241A02),
                         ),
                       )
                     : const Icon(Icons.file_upload_rounded),
                 label: Text(_importing ? 'Import...' : "Importer dans l'app"),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppTheme.primary,
-                  foregroundColor: const Color(0xFF04211F),
+                  foregroundColor: const Color(0xFF241A02),
                   textStyle: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,

@@ -305,7 +305,7 @@ class _RecordHomeButton extends StatelessWidget {
                     )
                   : Icon(
                       Icons.home_rounded,
-                      color: selected ? const Color(0xFF04211F) : AppTheme.text,
+                      color: selected ? const Color(0xFF241A02) : AppTheme.text,
                       size: 32,
                     ),
             ),
