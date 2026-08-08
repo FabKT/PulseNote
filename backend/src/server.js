@@ -3442,6 +3442,45 @@ function buildGenericCharacterCardPrompt(input) {
 }
 
 function buildCharacterCardPrompt(input) {
+  if (!input.identityImageDataUrl) {
+    const references = formatCharacterCardReferences(input.references);
+    return [
+      'TEXT-ONLY CHARACTER CARD GENERATION',
+      '',
+      'No character identity image was supplied. This is intentional and valid.',
+      'Create one original character identity from the user instructions, then lock that exact identity across every view.',
+      'Never treat a style image or structure image as the character identity.',
+      '',
+      'USER INSTRUCTIONS:',
+      input.prompt || 'Create an original, visually coherent professional manga character.',
+      '',
+      'TARGET STYLE:',
+      `Selected style: ${input.styleName || input.styleId}.`,
+      input.styleDescription || 'Follow the attached target-style reference precisely.',
+      'Style references control rendering only: lineart, face and eye treatment, hair rendering, shading, values, texture and polish. Do not copy their depicted person, pose, outfit, text or composition.',
+      '',
+      'OPTIONAL CHARACTER REFERENCES:',
+      references,
+      'Use only visual identity facts compatible with the user instructions. They are optional supporting cues, not mandatory identity sources.',
+      '',
+      'CARD STRUCTURE:',
+      'Generate one clean horizontal 3:2 character sheet. Follow the attached structure reference when supplied.',
+      'Otherwise use an upper row with full-body front, back and strict side/profile views at equal scale, followed by a lower row with five head-and-shoulders expressions: lightly pleased, very happy, neutral, angry and sad.',
+      'Show the complete body from head to feet. Keep generous margins and a plain white or near-white background.',
+      '',
+      'CONSISTENCY LOCK:',
+      'Every view must depict the same newly designed person. Lock face ratios, eyes, hairstyle, age, build, outfit, accessories, colors or monochrome values, silhouette and asymmetrical details before composing the sheet.',
+      'Expressions may change facial muscles only. Back and profile details must be conservative and perfectly consistent.',
+      '',
+      'RESTRICTIONS:',
+      'No labels, title, captions, measurements, notes, logos, extra views, props, scenery or decorative typography unless explicitly requested.',
+      'Do not copy the identity, pose, clothing, scene, text or composition from style and structure references.',
+      '',
+      'FINAL CHECK:',
+      'One original locked identity; exact 3+5 view layout; horizontal 3:2; selected style dominates; clean background; no cropped anatomy; no unauthorized text.',
+    ].join('\n');
+  }
+
   if (input.styleId.toLowerCase() === 'realistic') {
     return buildRealisticCharacterCardPrompt(input);
   }
@@ -3886,12 +3925,6 @@ app.post('/api/character/generate', requireAuth, async (req, res) => {
 
   const input = normalizeCharacterCardInput(req.body);
 
-  if (!input.identityImageDataUrl) {
-    return res.status(400).json({
-      error: 'Missing character identity image. Provide identityImageDataUrl as Image A.',
-    });
-  }
-
   if (is1990sCharacterStyle(input) && !input.styleImageDataUrl) {
     return res.status(400).json({
       error: 'Missing 1990s style reference image. Provide styleImageDataUrl as Image B.',
@@ -3912,12 +3945,10 @@ app.post('/api/character/generate', requireAuth, async (req, res) => {
 
   try {
     const imageInputs = buildCharacterCardImageInputs(input);
-    if (!imageInputs.length) {
-      return res.status(400).json({ error: 'No valid character reference image was provided.' });
-    }
-
     const finalPrompt = buildCharacterCardPrompt(input);
-    const imageDataUrl = await requestMangaImageEdit(finalPrompt, imageInputs, input.size);
+    const imageDataUrl = imageInputs.length
+      ? await requestMangaImageEdit(finalPrompt, imageInputs, input.size)
+      : await requestMangaImageGeneration(finalPrompt, input.size);
 
     res.json({
       imageDataUrl,
