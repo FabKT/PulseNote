@@ -57,6 +57,10 @@ const imageAnalysisEnabled = process.env.IMAGE_ANALYSIS_ENABLED !== 'false';
 const imageAnalysisTimeoutMs = Number(process.env.IMAGE_ANALYSIS_TIMEOUT_MS || 90000);
 const referenceAnalysisCacheLimit = Number(process.env.REFERENCE_ANALYSIS_CACHE_LIMIT || 160);
 const openAIImagePromptMaxLength = 32000;
+// Keep room below OpenAI's hard limit. Every image endpoint passes through a
+// final guard immediately before the request, including character cards and
+// sketch-to-final jobs that do not use the manga-page prompt builder.
+const openAIImagePromptTargetLength = 30000;
 const imageRequestMaxAttempts = Math.max(
   1,
   Math.min(4, Number(process.env.IMAGE_REQUEST_MAX_ATTEMPTS || 1)),
@@ -761,11 +765,34 @@ function compactMiddleText(value, maxLength) {
   return `${text.slice(0, headLength).trim()}${marker}${tail}`;
 }
 
+function fitOpenAIImagePrompt(value, maxLength = openAIImagePromptTargetLength) {
+  const normalized = cleanText(value);
+  if (normalized.length <= maxLength) return normalized;
+
+  const seen = new Set();
+  const compactedLines = [];
+  for (const rawLine of normalized.replace(/\r\n?/g, '\n').split('\n')) {
+    const line = rawLine.replace(/[ \t]+/g, ' ').trim();
+    if (!line) {
+      if (compactedLines.at(-1) !== '') compactedLines.push('');
+      continue;
+    }
+
+    const fingerprint = line.toLocaleLowerCase('en');
+    if (line.length >= 24 && seen.has(fingerprint)) continue;
+    if (line.length >= 24) seen.add(fingerprint);
+    compactedLines.push(line);
+  }
+
+  const compacted = compactedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return compactMiddleText(compacted, maxLength);
+}
+
 function compactPromptList(items, fallback, maxLength) {
   return compactMiddleText(formatPromptList(items, fallback), maxLength);
 }
 
-function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptMaxLength) {
+function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTargetLength) {
   const {
     taskType,
     isModification,
@@ -1213,7 +1240,7 @@ function buildMangaImagePrompt(input) {
         : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, panel geometry, pose mechanics, orientation, perspective, silhouette, expression, dialogue, style, and background level all follow the prompt and locks above.`,
     ]);
 
-  if (fullPrompt.length <= openAIImagePromptMaxLength) {
+  if (fullPrompt.length <= openAIImagePromptTargetLength) {
     return {
       taskType,
       prompt: fullPrompt,
@@ -1236,7 +1263,7 @@ function buildMangaImagePrompt(input) {
         panelLines,
         imageRoleLines,
       },
-      openAIImagePromptMaxLength,
+      openAIImagePromptTargetLength,
     ),
   };
 }
@@ -1451,6 +1478,7 @@ function buildMangaDiagnostics(input, taskType, finalPrompt) {
 
 async function requestMangaImageGeneration(finalPrompt, requestedImageSize = imageSize) {
   const size = normalizeMangaImageSize(requestedImageSize, imageSize);
+  const boundedPrompt = fitOpenAIImagePrompt(finalPrompt);
   const payload = await requestOpenAIImagePayload(
     () => ({
       url: 'https://api.openai.com/v1/images/generations',
@@ -1462,7 +1490,7 @@ async function requestMangaImageGeneration(finalPrompt, requestedImageSize = ima
         },
         body: JSON.stringify({
           model: imageModel,
-          prompt: finalPrompt,
+          prompt: boundedPrompt,
           size,
           quality: imageQuality,
           output_format: imageFormat,
@@ -1478,11 +1506,12 @@ async function requestMangaImageGeneration(finalPrompt, requestedImageSize = ima
 
 async function requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSize = imageSize) {
   const size = normalizeMangaImageSize(requestedImageSize, imageSize);
+  const boundedPrompt = fitOpenAIImagePrompt(finalPrompt);
   const payload = await requestOpenAIImagePayload(
     () => {
       const form = new FormData();
       form.append('model', imageModel);
-      form.append('prompt', finalPrompt);
+      form.append('prompt', boundedPrompt);
       form.append('size', size);
       form.append('quality', imageQuality);
       form.append('output_format', imageFormat);
