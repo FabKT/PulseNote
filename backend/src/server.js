@@ -364,6 +364,7 @@ function inventoryMangaAssets(input) {
 function assetLabel(asset) {
   const parts = [
     asset.imageLabel ? `${asset.imageLabel}: ${asset.name}` : asset.name,
+    asset.characterId ? `character-key=${asset.characterId}` : '',
     asset.characterName ? `character=${asset.characterName}` : '',
     asset.characterProfile ? `profile=${asset.characterProfile}` : '',
     asset.description ? `details=${asset.description}` : '',
@@ -392,18 +393,51 @@ function formatCharacterList(characters, fallback) {
     .join('\n');
 }
 
+function formatCharacterIdentityAssignments(input, fallback) {
+  if (!input.characters.length) return fallback;
+
+  return input.characters
+    .map((character) => {
+      const references = input.selectedAssets.filter(
+        (asset) =>
+          asset.role === 'Character' &&
+          asset.imageLabel &&
+          (asset.characterId === character.id ||
+            (!asset.characterId && asset.characterName === character.name)),
+      );
+      const labels = references.map((asset) => asset.imageLabel).join(', ');
+      return [
+        `- CHARACTER "${character.name}" [stable key: ${character.id}]`,
+        labels
+          ? `  Authorized identity references: ${labels}.`
+          : '  Authorized identity references: none were supplied; do not borrow another character identity.',
+        `  Every mention of "${character.name}" in the user request refers only to this profile and these authorized references.`,
+        '  Never apply another character\'s face, hair, silhouette, outfit, marks, morphology, or accessories to this character.',
+      ].join('\n');
+    })
+    .join('\n');
+}
+
 function assignImageLabels(input, isModification) {
-  let index = isModification && input.existingImageDataUrl ? 2 : 1;
-  const labelledAssets = input.selectedAssets.map((asset) => {
-    if (!asset.imageDataUrl) return asset;
-    const imageLabel = `Input image ${index}`;
+  const hasTargetImage = isModification && input.existingImageDataUrl;
+  const visualAssets = selectMangaVisualAssets(
+    input,
+    maxMangaReferenceImages - (hasTargetImage ? 1 : 0),
+  );
+  let index = hasTargetImage ? 2 : 1;
+  const labels = new Map();
+  for (const asset of visualAssets) {
+    labels.set(asset, `Input image ${index}`);
     index += 1;
-    return { ...asset, imageLabel };
+  }
+  const labelledAssets = input.selectedAssets.map((asset) => {
+    const imageLabel = labels.get(asset);
+    return imageLabel ? { ...asset, imageLabel } : asset;
   });
   return {
     ...input,
     selectedAssets: labelledAssets,
-    targetImageLabel: isModification && input.existingImageDataUrl ? 'Input image 1' : '',
+    targetImageLabel: hasTargetImage ? 'Input image 1' : '',
   };
 }
 
@@ -588,6 +622,8 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         'Before analyzing the images, classify each one by role and keep that role boundary strict.',
         'Apply this hierarchy when references conflict: explicit user instruction, target/current image for edits, user-assigned roles and identities, storyboard or structure, character identity, pose, inspiration, general style, then free interpretation.',
         'Never let an inspiration image override a character identity image, a storyboard image, panel geometry, role assignment, or dialogue.',
+        'Treat each character profile as an isolated identity namespace. Match character images by the declared stable character key and assigned character name, never by image position, visual similarity, prompt proximity, or list order.',
+        'Analyze every selected character independently. Never reuse the face, hair, outfit, silhouette, morphology, marks, or accessories extracted for one named character in the block for another named character.',
         'The final rendering style is controlled by the user style mode and STYLE LOCK, even when a reference is more detailed, shaded, or textured.',
         '',
         'Return compact markdown only. For each input image, use this exact structure:',
@@ -603,6 +639,7 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         '',
         'Respect the declared role of each image:',
         '- Character: extract identity, face, hair, outfit, silhouette, distinctive marks, expression baseline, posture, gaze, and traits to preserve.',
+        '  Start every Character analysis with the exact assigned character name and input-image label. End it with an explicit boundary saying that these identity traits belong only to that named character.',
         '- Pose: extract body mechanics, limb placement, weight, gesture, orientation, camera angle, and motion, not identity.',
         '- Storyboard or Generated Page: extract panel layout, reading order, framing, gutters, foreground/background placement, action sequence, and relative composition.',
         'For every Storyboard / structure image, add a mandatory STRUCTURE TRANSCRIPTION block that is precise enough to reconstruct the blank panel grid without seeing the image.',
@@ -661,6 +698,7 @@ function buildReferenceAnalysisContent(labelledInput, taskType) {
         `name=${asset.name || 'untitled'}`,
         `role=${asset.role}`,
         `declared utility=${imageRoleCopy[asset.role]}`,
+        asset.characterId ? `assigned character key=${asset.characterId}` : '',
         asset.characterName ? `assigned character=${asset.characterName}` : '',
         asset.characterProfile ? `character profile=${asset.characterProfile}` : '',
         asset.description ? `user notes=${asset.description}` : '',
@@ -805,6 +843,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
     panelGeometryLine,
     panelLines,
     imageRoleLines,
+    identityAssignments,
   } = context;
 
   const build = (budgets) =>
@@ -826,6 +865,10 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
         formatCharacterList(labelledInput.characters, '- no explicit character profile provided'),
         budgets.characters,
       ),
+      '',
+      'STRICT CHARACTER-TO-REFERENCE MAP:',
+      compactMiddleText(identityAssignments, budgets.identityAssignments),
+      'Names in the user request resolve to this map. Never resolve a named character from another character\'s reference, list position, visual similarity, or nearby prompt text.',
       '',
       'PROVIDED IMAGE ROLES:',
       labelledInput.targetImageLabel
@@ -874,6 +917,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
       characterNames.length > 1
         ? `${characterNames.join(' and ')} must never be swapped, fused, or mixed.`
         : 'Preserve selected character identity exactly; never replace with a generic manga character.',
+      'Each named character must remain visually distinct. A reference assigned to one stable character key is forbidden for every other character key.',
       'Narrative roles are fixed: do not swap actor/observer/reactor/attacker/defender/object-holder.',
       'Panel functions, exact panel count, recursive divisions, divider angles/intersections, relative panel sizes, gutters, reading order, dominant panel, and panel geometry must remain readable and match the authoritative structure transcription.',
       panelGeometryLine,
@@ -934,6 +978,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
       userRequest: Infinity,
       characters: Infinity,
       imageRoles: Infinity,
+      identityAssignments: Infinity,
       referenceAnalysis: Infinity,
       inventory: Infinity,
       panelLines: Infinity,
@@ -943,6 +988,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
       userRequest: Infinity,
       characters: 4500,
       imageRoles: 4500,
+      identityAssignments: 4500,
       referenceAnalysis: 9000,
       inventory: 3500,
       panelLines: 3500,
@@ -952,6 +998,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
       userRequest: Infinity,
       characters: 2800,
       imageRoles: 2600,
+      identityAssignments: 2800,
       referenceAnalysis: 5500,
       inventory: 2200,
       panelLines: 2200,
@@ -961,6 +1008,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
       userRequest: Math.max(8000, Math.floor(maxLength * 0.46)),
       characters: 1800,
       imageRoles: 1600,
+      identityAssignments: 2000,
       referenceAnalysis: 3200,
       inventory: 1400,
       panelLines: 1400,
@@ -978,6 +1026,7 @@ function buildCompactMangaImagePrompt(context, maxLength = openAIImagePromptTarg
     userRequest: Math.max(3000, maxLength - reserve),
     characters: 900,
     imageRoles: 900,
+    identityAssignments: 1400,
     referenceAnalysis: 1400,
     inventory: 700,
     panelLines: 800,
@@ -1032,14 +1081,24 @@ function buildMangaImagePrompt(input) {
     }
     return `Panel ${panel}: continue the action while preserving readable character identities.`;
   });
-  const imageRoleLines = labelledInput.selectedAssets
-    .filter((asset) => asset.imageDataUrl)
+  const targetImageCount = labelledInput.targetImageLabel ? 1 : 0;
+  const orderedVisualAssets = selectMangaVisualAssets(
+    labelledInput,
+    maxMangaReferenceImages - targetImageCount,
+  );
+  const imageRoleLines = orderedVisualAssets
+    .filter((asset) => asset.imageDataUrl && asset.imageLabel)
     .map(
       (asset) =>
         `- ${asset.imageLabel}: ${asset.name} / role=${asset.role}. This image ${imageRoleCopy[asset.role]}. ${
-          asset.characterName ? `Assigned character profile: ${asset.characterName}.` : ''
+          asset.characterId ? `Stable character key: ${asset.characterId}.` : ''
+        } ${asset.characterName ? `Assigned character profile: ${asset.characterName}.` : ''
         } ${asset.description ? `User notes: ${asset.description}.` : ''}`.trim(),
     );
+  const identityAssignments = formatCharacterIdentityAssignments(
+    labelledInput,
+    '- no explicit character-to-reference assignment provided',
+  );
 
   const fullPrompt = joinPromptLines([
       'OBJECTIVE:',
@@ -1056,6 +1115,10 @@ function buildMangaImagePrompt(input) {
       '',
       'CHARACTER PROFILES:',
       formatCharacterList(labelledInput.characters, '- no explicit character profile provided'),
+      '',
+      'STRICT CHARACTER-TO-REFERENCE MAP:',
+      identityAssignments,
+      'Names in the user request resolve to this map. Never resolve a named character from another character\'s reference, list position, visual similarity, or nearby prompt text.',
       '',
       'DESCRIPTION OF PROVIDED IMAGES:',
       labelledInput.targetImageLabel
@@ -1137,6 +1200,7 @@ function buildMangaImagePrompt(input) {
             ' and ',
           )} must never be swapped, fused, or visually mixed. Each character keeps only their own identity traits.`
         : 'Preserve the selected character identity traits exactly. Do not replace the selected character with a generic manga character.',
+      'Each named character is an isolated identity namespace. A reference assigned to one stable character key is forbidden for all other character keys. Never duplicate one selected identity into another named character.',
       'The reference image defines who the character is. The prompt and panel plan define what the character does.',
       '',
       'ROLE LOCK:',
@@ -1268,6 +1332,7 @@ function buildMangaImagePrompt(input) {
         panelGeometryLine,
         panelLines,
         imageRoleLines,
+        identityAssignments,
       },
       openAIImagePromptTargetLength,
     ),
