@@ -1130,7 +1130,9 @@ function buildMangaImagePrompt(input) {
       'If a detail is not specified, infer only what is necessary for a coherent manga page and do not override any explicit reference role or lock.',
       '',
       'IDENTITY LOCK:',
-      characterNames.length > 1
+      taskType === 'strict_character_replacement'
+        ? 'Follow every explicit ORIGINAL_n -> REPLACEMENT_n mapping from the user request. ORIGINAL references identify what must be removed; REPLACEMENT references define the final identity. Never preserve an original identity inside an authorized target, cross pair assignments, fuse identities, or transfer traits between mappings.'
+        : characterNames.length > 1
         ? `${characterNames.join(
             ' and ',
           )} must never be swapped, fused, or visually mixed. Each character keeps only their own identity traits.`
@@ -1212,7 +1214,7 @@ function buildMangaImagePrompt(input) {
         : '',
       taskType === 'strict_character_replacement' ? 'STRICT CHARACTER REPLACEMENT LOCK:' : '',
       taskType === 'strict_character_replacement'
-        ? 'Replace only the requested character identity with the provided character reference. Preserve the original pose, perspective, orientation, limb placement, silhouette position, panel geometry, background, dialogue, effects, and style of the target image. Remove the old character identity completely without redesigning the scene.'
+        ? 'For each explicit ORIGINAL_n -> REPLACEMENT_n mapping, locate every reliable authorized occurrence of ORIGINAL_n and replace its complete visible identity and body with REPLACEMENT_n. Preserve the source skeleton, pose, expression, gaze, perspective, orientation, limb placement, crop, occlusion, interaction, panel geometry, background, dialogue, effects, and style. Remove the old face, hair, skin, morphology, marks, accessories and requested clothing completely without redesigning the scene. Never perform a face-only replacement.'
         : '',
       '',
       isModification ? 'PRESERVE:' : 'TARGETED PAGE INSTRUCTIONS:',
@@ -1226,7 +1228,9 @@ function buildMangaImagePrompt(input) {
         : panelLines.join('\n'),
       '',
       'GOLDEN RULES:',
-      'Do not genericize the request. Do not make a beautiful but different image. Do not swap characters. Do not let a style or inspiration reference replace identity. Do not let identity references replace the requested pose or panel placement. Do not change dialogue. Do not omit important limbs. Do not add unnecessary backgrounds, props, characters, or text.',
+      taskType === 'strict_character_replacement'
+        ? 'Do not genericize the request. Do not make a beautiful but different image. Perform only the declared character mappings; never reverse, cross, merge or invent a mapping. Do not let style or inspiration replace a mapped identity. Do not let identity references replace source pose or panel placement. Do not change dialogue. Do not omit important limbs. Do not add unnecessary backgrounds, props, characters or text.'
+        : 'Do not genericize the request. Do not make a beautiful but different image. Do not swap characters. Do not let a style or inspiration reference replace identity. Do not let identity references replace the requested pose or panel placement. Do not change dialogue. Do not omit important limbs. Do not add unnecessary backgrounds, props, characters, or text.',
       'The final image must answer who is shown, what action they perform, where they are in the panel/page, how the panel is composed, what style is used, and what must remain unchanged.',
       '',
       'RESTRICTIONS:',
@@ -1236,7 +1240,9 @@ function buildMangaImagePrompt(input) {
       '',
       'FINAL MANDATORY INSTRUCTION:',
       isModification
-        ? `${canvasFormatLine} Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, exact pose/orientation, panel geometry, dialogue, background constraints, and original style unless a style change was explicitly requested.`
+        ? taskType === 'strict_character_replacement'
+          ? `${canvasFormatLine} Return the exact same source scene with every authorized mapped original fully replaced by its paired replacement. Preserve all non-target pixels and preserve source structure, pose, orientation, perspective, interactions, occlusions, text, backgrounds and style.`
+          : `${canvasFormatLine} Modify only the requested parts while preserving the current manga page structure, successful elements, identity fidelity, exact pose/orientation, panel geometry, dialogue, background constraints, and original style unless a style change was explicitly requested.`
         : `${canvasFormatLine} Generate the final manga artwork so the selected character identities, narrative roles, panel functions, panel geometry, pose mechanics, orientation, perspective, silhouette, expression, dialogue, style, and background level all follow the prompt and locks above.`,
     ]);
 
