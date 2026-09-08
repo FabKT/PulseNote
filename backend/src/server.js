@@ -7,6 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import multer from 'multer';
 import OpenAI from 'openai';
+import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import admin from 'firebase-admin';
 
@@ -73,6 +74,7 @@ const sketchFinalCreditCost = Number(
   process.env.CREDIT_COST_SKETCH_FINAL || mangaPageCreditCost,
 );
 const mangaForgeEnabled = process.env.MANGA_FORGE_ENABLED !== 'false';
+const animationFrameSheetEnabled = process.env.ANIMATION_FRAME_SHEET_ENABLED !== 'false';
 // Plafond dur d'OpenAI /images/edits (nombre d'images de référence en entrée).
 const maxMangaReferenceImages = 16;
 const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
@@ -4162,6 +4164,322 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
     console.error('Manga page generation failed:', error);
     res.status(500).json({
       error: 'Manga page generation failed.',
+      details: safeOpenAiError(error),
+    });
+  }
+});
+
+const supportedFrameSheetPanelCounts = new Set([2, 3, 4, 6, 9, 12, 16]);
+
+function normalizeFrameSheetPanelCount(value) {
+  const count = Number(value);
+  return supportedFrameSheetPanelCounts.has(count) ? count : 6;
+}
+
+function frameSheetGrid(panelCount, aspectRatio) {
+  const landscapeColumns = { 2: 2, 3: 3, 4: 2, 6: 3, 9: 3, 12: 4, 16: 4 };
+  const portraitColumns = { 2: 1, 3: 1, 4: 2, 6: 2, 9: 3, 12: 3, 16: 4 };
+  const columns =
+    aspectRatio === '3:2'
+      ? landscapeColumns[panelCount]
+      : portraitColumns[panelCount];
+  return { columns, rows: panelCount / columns };
+}
+
+function frameSheetDimensions(size) {
+  const [width, height] = String(size)
+    .split('x')
+    .map((value) => Number(value));
+  return {
+    width: Number.isFinite(width) ? width : 1536,
+    height: Number.isFinite(height) ? height : 1024,
+  };
+}
+
+function frameSheetGridSvg(input, options = {}) {
+  const { columns, rows } = frameSheetGrid(input.panelCount, input.aspectRatio);
+  const { width, height } = frameSheetDimensions(input.size);
+  const strokeWidth = Math.max(4, Math.round(Math.min(width, height) * 0.006));
+  const withBackground = options.background !== false;
+  const lines = [];
+
+  for (let column = 1; column < columns; column += 1) {
+    const x = (width * column) / columns;
+    lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${height}" />`);
+  }
+  for (let row = 1; row < rows; row += 1) {
+    const y = (height * row) / rows;
+    lines.push(`<line x1="0" y1="${y}" x2="${width}" y2="${y}" />`);
+  }
+
+  return Buffer.from(
+    `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
+      (withBackground ? '<rect width="100%" height="100%" fill="#ffffff" />' : '') +
+      `<g fill="none" stroke="#111827" stroke-width="${strokeWidth}" shape-rendering="crispEdges">${lines.join('')}</g>` +
+      '</svg>',
+  );
+}
+
+async function buildFrameSheetTemplateImage(input) {
+  const png = await sharp(frameSheetGridSvg(input)).png().toBuffer();
+  return {
+    blob: new Blob([png], { type: 'image/png' }),
+    filename: `mandatory-${input.panelCount}-cell-frame-sheet-grid.png`,
+  };
+}
+
+async function enforceFrameSheetGrid(imageDataUrl, input) {
+  const parsed = dataUrlToImageBlob(imageDataUrl, 'generated-frame-sheet');
+  if (!parsed) return imageDataUrl;
+
+  const source = Buffer.from(await parsed.blob.arrayBuffer());
+  const { width, height } = frameSheetDimensions(input.size);
+  const output = await sharp(source)
+    .resize(width, height, { fit: 'fill' })
+    .composite([{ input: frameSheetGridSvg(input, { background: false }) }])
+    .png()
+    .toBuffer();
+  return `data:image/png;base64,${output.toString('base64')}`;
+}
+
+function buildAnimationFrameSheetPrompt(input) {
+  const grid = frameSheetGrid(input.panelCount, input.aspectRatio);
+  const references = input.selectedAssets.length
+    ? input.selectedAssets
+        .map(
+          (asset, index) =>
+            `Reference image ${index + 2}: ${asset.name}; role=${asset.role}; notes=${asset.description || 'none'}.`,
+        )
+        .join('\n')
+    : 'No reference image is supplied.';
+  const timeline = Array.from({ length: input.panelCount }, (_, index) => {
+    const progress = Math.round((index / Math.max(1, input.panelCount - 1)) * 100);
+    return `Cell ${index + 1}: isolated animation state at ${progress}% of the same continuous action.`;
+  }).join('\n');
+
+  return fitOpenAIImagePrompt(
+    [
+      'NON-NEGOTIABLE OUTPUT TYPE: UNIFORM ANIMATION FRAME SHEET.',
+      'This request is NOT a manga page, NOT a splash illustration, NOT a poster, and NOT one full-bleed scene.',
+      `The final image MUST visibly contain exactly ${input.panelCount} separate animation frames in a perfectly regular ${grid.rows}-row by ${grid.columns}-column grid.`,
+      'OUTPUT IS INVALID unless all cells are simultaneously visible, perfectly equal in width and height, and separated by straight axis-aligned borders running continuously from edge to edge.',
+      'No dominant panel, merged panel, inset panel, diagonal divider, irregular panel, missing cell, empty cell, border crossing, or artwork spanning multiple cells is permitted.',
+      'Treat every grid cell as an independent clipped viewport. Characters, scenery, objects, effects, motion lines, and shadows must stop at every cell boundary.',
+      'INPUT IMAGE 1 IS THE MANDATORY BLANK GRID TEMPLATE. Edit that template directly: preserve every divider at exactly the same position, keep every cell the same size, and draw one animation frame inside each blank cell.',
+      'Do not remove, move, bend, restyle, cover, crop, or reinterpret any divider from Input image 1. Do not use Input image 1 as loose inspiration.',
+      '',
+      'MANDATORY TEMPORAL SEQUENCE:',
+      'Read left-to-right and then top-to-bottom. Show the same camera, scene, characters, identities, clothes, objects, lighting, and style in every cell.',
+      'Advance only the action state. The first cell is the clear starting pose, the last cell is the clear ending pose, and every intermediate cell is an evenly spaced chronological keyframe.',
+      'Do not repeat a pose, reverse time, switch scenes, create a montage, or depict unrelated actions.',
+      timeline,
+      '',
+      'ANIMATION ART DIRECTION:',
+      'Unless the user explicitly requests another visual treatment, render every cell as a polished frame from a contemporary 2D anime production: clean expressive line art, controlled cel shading, coherent color design, cinematic lighting, refined faces, readable silhouettes, atmospheric depth, and crisp production-ready detail.',
+      'The default result must look like modern anime footage or modern anime key art divided into animation frames, not like a printed manga page, manga scan, monochrome ink drawing, screentone page, rough comic panel, photorealistic image, or 3D render.',
+      'Character references control identity and clothing but must not import monochrome manga rendering, paper texture, hatching, screentones, gutters, dialogue, captions, or print artifacts into the animation style.',
+      'Style priority is strict: an explicit style requested in the user prompt overrides the default; an explicitly assigned Style reference applies when the prompt does not contradict it; otherwise use the modern anime default above.',
+      'Keep the chosen art direction identical across all cells.',
+      '',
+      'REFERENCE ROLE BOUNDARIES:',
+      references,
+      'Character references define identity only. Pose references define movement only. Background references define environment only. Object references define the named prop only. Style references define rendering only. Storyboard references define staging and motion order only.',
+      '',
+      'USER ACTION TO DISTRIBUTE ACROSS THE CELLS:',
+      input.prompt,
+      '',
+      'FINAL COMPLIANCE COMMAND:',
+      `Return one ${input.aspectRatio} image whose visible result is exactly the ${grid.rows} x ${grid.columns} uniform animation contact sheet described above. The grid requirement overrides every artistic or compositional preference. Never return a single illustration.`,
+    ].join('\n'),
+  );
+}
+
+function normalizeAnimationFramePosition(value, fallback = 1) {
+  const position = Number(value);
+  if (!Number.isFinite(position)) return fallback;
+  return Math.min(120, Math.max(1, Math.round(position)));
+}
+
+function buildAnimationKeyframePrompt(input) {
+  const references = input.selectedAssets.length
+    ? input.selectedAssets
+        .map(
+          (asset, index) =>
+            `Input image ${index + 1}: ${asset.name}; role=${asset.role}; notes=${asset.description || 'none'}.`,
+        )
+        .join('\n')
+    : 'No reference image is supplied.';
+
+  return fitOpenAIImagePrompt(
+    [
+      'NON-NEGOTIABLE OUTPUT TYPE: ONE ANIMATION KEYFRAME.',
+      'Generate exactly one borderless scene. Do not create a manga page, contact sheet, collage, split screen, storyboard, grid, caption, or alternative version.',
+      `This is frame ${input.frameIndex} of an intended ${input.frameCount}-frame sequence. Render only the visual state belonging at this exact chronological position.`,
+      'Keep character identity, proportions, clothes, objects, environment, camera, framing, lighting, and rendering style consistent with supplied sequence references.',
+      input.frameIndex > 1
+        ? 'When a previous-frame reference is supplied, continue directly from it. Advance the action by one small readable step; do not restart, jump ahead, reverse, or change the scene.'
+        : 'Render the unmistakable initial state of the requested action.',
+      input.frameIndex === input.frameCount
+        ? 'This is the final frame: show the resolved ending state of the action.'
+        : 'Do not complete the action prematurely unless the user explicitly describes this frame as the ending.',
+      '',
+      'ANIMATION ART DIRECTION:',
+      'Unless the user explicitly requests another visual treatment, render this as a polished frame from a contemporary 2D anime production: clean expressive line art, controlled cel shading, coherent color design, cinematic lighting, refined faces, readable silhouettes, atmospheric depth, and crisp production-ready detail.',
+      'The default result must look like modern anime footage or modern anime key art, not like a printed manga page, manga scan, monochrome ink drawing, screentone illustration, rough comic panel, photorealistic image, or 3D render.',
+      'Character references control identity and clothing but must not import monochrome manga rendering, paper texture, hatching, screentones, gutters, dialogue, captions, or print artifacts into the animation style.',
+      'Style priority is strict: an explicit style requested in the user prompt overrides the default; an explicitly assigned Style reference applies when the prompt does not contradict it; otherwise use the modern anime default above.',
+      '',
+      'REFERENCE ROLE BOUNDARIES:',
+      references,
+      'Character controls identity only; Pose controls body mechanics; Storyboard controls temporal continuity and staging; Background controls environment; Object controls the named prop; Style controls rendering treatment; Inspiration contributes only compatible cues.',
+      '',
+      'USER REQUEST FOR THIS FRAME:',
+      input.prompt,
+      '',
+      `FINAL COMMAND: return only frame ${input.frameIndex}/${input.frameCount} as one complete ${input.aspectRatio} image, with no panel border or multi-frame layout.`,
+    ].join('\n'),
+  );
+}
+
+app.post('/api/video/frame', requireAuth, async (req, res) => {
+  if (!animationFrameSheetEnabled) {
+    return res.status(403).json({ error: 'Animation keyframe generation is disabled.' });
+  }
+
+  const prompt = cleanText(req.body?.prompt);
+  if (!prompt) {
+    return res.status(400).json({ error: 'Missing animation keyframe prompt.' });
+  }
+
+  const requestedImageSize = normalizeMangaImageSize(
+    req.body?.size || mangaImageSizeFromAspectRatio(req.body?.aspectRatio),
+    '1536x1024',
+  );
+  const frameCount = normalizeAnimationFramePosition(req.body?.frameCount, 1);
+  const frameIndex = Math.min(
+    normalizeAnimationFramePosition(req.body?.frameIndex, 1),
+    frameCount,
+  );
+  const input = {
+    operation: 'generate',
+    prompt,
+    editPrompt: '',
+    panelCount: 1,
+    panelInstructions: [],
+    selectedAssets: normalizeMangaAssets(req.body?.selectedAssets),
+    characters: [],
+    styleMode: 'auto',
+    backgroundLevel: 'auto',
+    readingDirection: 'left-to-right',
+    aspectRatio: normalizeMangaAspectRatio(req.body?.aspectRatio, requestedImageSize),
+    size: requestedImageSize,
+    existingImageDataUrl: '',
+    frameIndex,
+    frameCount,
+  };
+
+  try {
+    const finalPrompt = buildAnimationKeyframePrompt(input);
+    const imageDataUrl = await requestMangaImage(
+      finalPrompt,
+      input,
+      'animation_keyframe_generation',
+    );
+    res.json({
+      imageDataUrl,
+      imageUrl: imageDataUrl,
+      finalPrompt,
+      taskType: 'animation_keyframe_generation',
+      model: imageModel,
+      size: requestedImageSize,
+      quality: imageQuality,
+      creditsUsed: mangaPageCreditCost,
+      createdAt: new Date().toISOString(),
+      diagnostics: {
+        taskType: 'animation_keyframe_generation',
+        promptLength: finalPrompt.length,
+        promptLimit: openAIImagePromptMaxLength,
+        providedImageCount: input.selectedAssets.filter((asset) => asset.imageDataUrl).length,
+        frameIndex,
+        frameCount,
+      },
+    });
+  } catch (error) {
+    console.error('Animation keyframe generation failed:', error);
+    res.status(500).json({
+      error: 'Animation keyframe generation failed.',
+      details: safeOpenAiError(error),
+    });
+  }
+});
+
+app.post('/api/video/frame-sheet', requireAuth, async (req, res) => {
+  if (!animationFrameSheetEnabled) {
+    return res.status(403).json({ error: 'Animation frame-sheet generation is disabled.' });
+  }
+
+  const prompt = cleanText(req.body?.prompt);
+  if (!prompt) {
+    return res.status(400).json({ error: 'Missing frame-sheet generation prompt.' });
+  }
+
+  const requestedImageSize = normalizeMangaImageSize(
+    req.body?.size || mangaImageSizeFromAspectRatio(req.body?.aspectRatio),
+    '1536x1024',
+  );
+  const input = {
+    operation: 'generate',
+    prompt,
+    editPrompt: '',
+    panelCount: normalizeFrameSheetPanelCount(req.body?.panelCount),
+    panelInstructions: [],
+    selectedAssets: normalizeMangaAssets(req.body?.selectedAssets),
+    characters: [],
+    styleMode: 'auto',
+    backgroundLevel: 'auto',
+    readingDirection: 'left-to-right',
+    aspectRatio: normalizeMangaAspectRatio(req.body?.aspectRatio, requestedImageSize),
+    size: requestedImageSize,
+    existingImageDataUrl: '',
+  };
+
+  try {
+    const finalPrompt = buildAnimationFrameSheetPrompt(input);
+    const templateImage = await buildFrameSheetTemplateImage(input);
+    const referenceImages = buildMangaImageInputs(
+      input,
+      'animation_frame_sheet_generation',
+    );
+    const generatedImageDataUrl = await requestMangaImageEdit(
+      finalPrompt,
+      [templateImage, ...referenceImages].slice(0, maxMangaReferenceImages),
+      requestedImageSize,
+    );
+    const imageDataUrl = await enforceFrameSheetGrid(generatedImageDataUrl, input);
+
+    res.json({
+      imageDataUrl,
+      imageUrl: imageDataUrl,
+      finalPrompt,
+      taskType: 'animation_frame_sheet_generation',
+      model: imageModel,
+      size: requestedImageSize,
+      quality: imageQuality,
+      creditsUsed: mangaPageCreditCost,
+      createdAt: new Date().toISOString(),
+      diagnostics: {
+        taskType: 'animation_frame_sheet_generation',
+        promptLength: finalPrompt.length,
+        promptLimit: openAIImagePromptMaxLength,
+        providedImageCount: input.selectedAssets.filter((asset) => asset.imageDataUrl).length,
+        requestedCellCount: input.panelCount,
+        grid: `${frameSheetGrid(input.panelCount, input.aspectRatio).rows}x${frameSheetGrid(input.panelCount, input.aspectRatio).columns}`,
+      },
+    });
+  } catch (error) {
+    console.error('Animation frame-sheet generation failed:', error);
+    res.status(500).json({
+      error: 'Animation frame-sheet generation failed.',
       details: safeOpenAiError(error),
     });
   }

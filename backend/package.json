@@ -15,7 +15,8 @@
     "express": "^4.21.2",
     "firebase-admin": "^13.9.0",
     "multer": "^2.0.2",
-    "openai": "^4.78.1"
+    "openai": "^4.78.1",
+    "sharp": "^0.35.4"
   },
   "engines": {
     "node": ">=20"
