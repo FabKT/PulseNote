@@ -67,6 +67,14 @@ d'environnement (memes secrets que cote Flutter).
 
 ## Important avant publication
 
-Le token `APP_CLIENT_TOKEN` reste un mecanisme de secours (utilise si aucun
-utilisateur n'est connecte). Une fois l'authentification Supabase en place,
-il faudra egalement verifier les abonnements premium cote backend.
+Les routes IA exigent un utilisateur Supabase connecte et verifient le palier
+Pro ainsi que les credits cote backend. Pour activer la verification Google
+Play et la suppression de compte sur Render, ajouter ces secrets :
+
+- `SUPABASE_SERVICE_ROLE_KEY` : cle `service_role` du projet Supabase ;
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` : contenu JSON complet du compte de
+  service autorise dans Play Console.
+
+Executer aussi `supabase/schema.sql` dans le SQL Editor Supabase afin de creer
+`user_entitlements` et les fonctions atomiques de debit/remboursement des
+credits. Ne jamais integrer ces deux secrets dans l'application mobile.

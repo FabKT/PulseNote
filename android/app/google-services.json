@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "792550477817",
+    "project_id": "pulsenote-d2d85",
+    "storage_bucket": "pulsenote-d2d85.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:792550477817:android:a51e2c411b35bd3029f728",
+        "android_client_info": {
+          "package_name": "com.fabkt.ultimateaudiorecorder"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "792550477817-17jljt31vnqiv5l2sbmms3mt0fp2t2ai.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fabkt.ultimateaudiorecorder",
+            "certificate_hash": "4b678970bedc1f862881eed59edf897d76b05911"
+          }
+        },
+        {
+          "client_id": "792550477817-lmd67hdt7fi1s90i1ubfkabqt95ce1tj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fabkt.ultimateaudiorecorder",
+            "certificate_hash": "6ce2d5e69c5a21d0009e3bf786c40597ee102497"
+          }
+        },
+        {
+          "client_id": "792550477817-96vucv9su7betb0l72hgc8cvofin3fh6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAt2h_7_PKp8MHnhux96Onetiy6Yyl26FE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "792550477817-96vucv9su7betb0l72hgc8cvofin3fh6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

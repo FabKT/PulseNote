@@ -28,13 +28,13 @@ const SUBSCRIPTIONS = [
     productId: 'ultimate_audio_recorder_plus_monthly',
     basePlanId: 'plus-monthly',
     name: 'Plus',
-    priceEur: 3.99,
+    priceEur: 2.99,
   },
   {
     productId: 'ultimate_audio_recorder_pro_monthly',
     basePlanId: 'pro-monthly',
     name: 'Pro',
-    priceEur: 8.99,
+    priceEur: 9.99,
   },
 ];
 

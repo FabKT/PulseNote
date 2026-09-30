@@ -101,6 +101,28 @@ class _PaywallSheet extends StatelessWidget {
 
   Widget _plans(BuildContext context, AppState state) {
     return Column(children: [
+      if (state.tier == SubscriptionTier.pro) ...[
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppTheme.primary.withValues(alpha: 0.30),
+            ),
+          ),
+          child: Text(
+            '${state.creditsRemaining} crédits IA disponibles',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.primary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
       _PlanCard(
         tier: SubscriptionTier.free,
         title: 'Gratuit',
@@ -111,6 +133,8 @@ class _PaywallSheet extends StatelessWidget {
           'Enregistrements normaux',
           'Créneaux programmés (horaire)',
           'Dossiers',
+          'Import audio',
+          'MP4 vers MP3',
           '500 Mo de sauvegarde cloud',
         ],
       ),
@@ -119,14 +143,12 @@ class _PaywallSheet extends StatelessWidget {
         tier: SubscriptionTier.plus,
         title: 'Plus',
         price: state.priceFor(SubscriptionTier.plus).isEmpty
-            ? '3,99€/mois'
+            ? '2,99€/mois'
             : '${state.priceFor(SubscriptionTier.plus)}/mois',
         current: state.tier == SubscriptionTier.plus,
         highlighted: feature?.requiredTier == SubscriptionTier.plus,
         features: const [
           'Lecture continue',
-          'Import audio',
-          'MP4 vers MP3',
           'Créneaux programmés (mots-clés)',
           'Lecture planifiée',
         ],
@@ -140,7 +162,7 @@ class _PaywallSheet extends StatelessWidget {
         tier: SubscriptionTier.pro,
         title: 'Pro',
         price: state.priceFor(SubscriptionTier.pro).isEmpty
-            ? '8,99€/mois'
+            ? '9,99€/mois'
             : '${state.priceFor(SubscriptionTier.pro)}/mois',
         current: state.tier == SubscriptionTier.pro,
         highlighted: feature?.requiredTier == SubscriptionTier.pro,
@@ -148,6 +170,7 @@ class _PaywallSheet extends StatelessWidget {
           'Tout Plus, et en plus :',
           'Transcription audio',
           'Résumé IA',
+          '1 000 crédits IA renouvelés chaque mois',
         ],
         onBuy: state.tier == SubscriptionTier.pro
             ? null

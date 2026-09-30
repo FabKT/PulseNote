@@ -65,11 +65,89 @@ create table if not exists public.audio_playback_schedules (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.user_entitlements (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  tier text not null default 'free' check (tier in ('free', 'plus', 'pro')),
+  subscription_product_id text,
+  purchase_token_hash text unique,
+  subscription_expires_at timestamptz,
+  credits_remaining integer not null default 0 check (credits_remaining >= 0),
+  credits_reset_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
 alter table public.recordings enable row level security;
 alter table public.folders enable row level security;
 alter table public.keywords enable row level security;
 alter table public.schedules enable row level security;
 alter table public.audio_playback_schedules enable row level security;
+alter table public.user_entitlements enable row level security;
+
+drop policy if exists "owner_read_entitlement" on public.user_entitlements;
+create policy "owner_read_entitlement" on public.user_entitlements
+  for select using (auth.uid() = user_id);
+
+create or replace function public.consume_ai_credits(
+  p_user_id uuid,
+  p_amount integer
+) returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  remaining integer;
+begin
+  if p_amount <= 0 then
+    raise exception 'invalid_credit_amount';
+  end if;
+
+  update public.user_entitlements
+  set credits_remaining = case
+        when credits_reset_at is not null and credits_reset_at <= now()
+          then 1000 - p_amount
+        else credits_remaining - p_amount
+      end,
+      credits_reset_at = case
+        when credits_reset_at is not null and credits_reset_at <= now()
+          then now() + interval '1 month'
+        else credits_reset_at
+      end,
+      updated_at = now()
+  where user_id = p_user_id
+    and tier = 'pro'
+    and case
+      when credits_reset_at is not null and credits_reset_at <= now()
+        then 1000
+      else credits_remaining
+    end >= p_amount
+  returning credits_remaining into remaining;
+
+  if remaining is null then
+    raise exception 'insufficient_ai_credits';
+  end if;
+  return remaining;
+end;
+$$;
+
+create or replace function public.refund_ai_credits(
+  p_user_id uuid,
+  p_amount integer
+) returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.user_entitlements
+  set credits_remaining = least(1000, credits_remaining + greatest(p_amount, 0)),
+      updated_at = now()
+  where user_id = p_user_id and tier = 'pro';
+$$;
+
+revoke all on function public.consume_ai_credits(uuid, integer) from public, anon, authenticated;
+revoke all on function public.refund_ai_credits(uuid, integer) from public, anon, authenticated;
+grant execute on function public.consume_ai_credits(uuid, integer) to service_role;
+grant execute on function public.refund_ai_credits(uuid, integer) to service_role;
 
 do $$
 declare

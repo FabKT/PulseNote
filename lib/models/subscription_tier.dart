@@ -2,8 +2,8 @@ enum SubscriptionTier { free, plus, pro }
 
 extension SubscriptionTierAccess on SubscriptionTier {
   bool get hasContinuousPlayback => index >= SubscriptionTier.plus.index;
-  bool get hasAudioImport => index >= SubscriptionTier.plus.index;
-  bool get hasMp4ToMp3 => index >= SubscriptionTier.plus.index;
+  bool get hasAudioImport => true;
+  bool get hasMp4ToMp3 => true;
   bool get hasKeywordSchedules => index >= SubscriptionTier.plus.index;
   bool get hasPlaybackSchedules => index >= SubscriptionTier.plus.index;
   bool get hasTranscription => index >= SubscriptionTier.pro.index;

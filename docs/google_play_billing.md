@@ -8,8 +8,8 @@ sans avoir besoin d'acheter les deux) :
 
 | ID produit | Nom public suggéré | Rythme | Prix |
 |---|---|---|---|
-| `ultimate_audio_recorder_plus_monthly` | Ultimate Audio Recorder Plus | mensuel | 3,99 € |
-| `ultimate_audio_recorder_pro_monthly` | Ultimate Audio Recorder Pro | mensuel | 8,99 € |
+| `ultimate_audio_recorder_plus_monthly` | Ultimate Audio Recorder Plus | mensuel | 2,99 € |
+| `ultimate_audio_recorder_pro_monthly` | Ultimate Audio Recorder Pro | mensuel | 9,99 € |
 
 Les ID doivent être strictement identiques à ceux définis dans
 `lib/config/billing_config.dart` (`plusSubscriptionId`, `proSubscriptionId`).
@@ -46,10 +46,11 @@ libellés) avant de t'appuyer dessus en production.
 ## Contenu par palier (pour la fiche produit / description)
 
 - **Gratuit** : enregistrements normaux, créneaux programmés (horaire),
-  dossiers, 500 Mo de sauvegarde cloud.
-- **Plus** (3,99€) : + lecture continue, import audio, MP4 vers MP3,
+  dossiers, import audio, MP4 vers MP3, 500 Mo de sauvegarde cloud.
+- **Plus** (2,99€) : + lecture continue,
   créneaux programmés (mots-clés), lecture planifiée.
-- **Pro** (8,99€) : tout Plus, + transcription audio et résumé IA.
+- **Pro** (9,99€) : tout Plus, + transcription audio, résumé IA et
+  1 000 crédits IA renouvelés chaque mois sans report.
 
 ## Parcours de test
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
+import '../services/account_service.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
 
@@ -98,11 +99,68 @@ class ProfileScreen extends StatelessWidget {
                 icon: const Icon(Icons.logout_rounded),
                 label: const Text('Se déconnecter'),
               ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => _confirmAccountDeletion(context, state),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.danger,
+                  side: const BorderSide(color: AppTheme.danger),
+                ),
+                icon: const Icon(Icons.delete_forever_rounded),
+                label: const Text('Supprimer mon compte'),
+              ),
             ],
           ),
         );
       },
     );
+  }
+
+  Future<void> _confirmAccountDeletion(
+    BuildContext context,
+    AppState state,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer définitivement le compte ?'),
+        content: const Text(
+          'Le compte, les données synchronisées et les fichiers audio cloud '
+          'seront supprimés. Cette action est irréversible. Les abonnements '
+          'Google Play doivent être résiliés séparément dans Google Play.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await AccountService.deleteAccount();
+      await state.clearLocalAccountData();
+      await AuthService.signOut();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Votre compte a été supprimé.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 }
 

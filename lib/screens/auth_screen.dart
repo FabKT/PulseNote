@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 import '../services/auth_service.dart';
+import '../state/app_state.dart';
 import '../ui/app_theme.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -130,6 +132,9 @@ class _AuthScreenState extends State<AuthScreen> {
           password: _password.text,
         );
       }
+      if (mounted && AuthService.currentUser != null) {
+        await context.read<AppState>().refreshEntitlement();
+      }
     } on AuthException catch (error) {
       _showError(_friendlySupabaseError(error));
     } catch (error) {
@@ -143,6 +148,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _loading = true);
     try {
       await AuthService.signInWithGoogle();
+      if (mounted) await context.read<AppState>().refreshEntitlement();
     } on AuthException catch (error) {
       _showError(_friendlySupabaseError(error));
     } catch (error) {

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../config/billing_config.dart';
 import '../models/subscription_tier.dart';
+import 'entitlement_service.dart';
 
 class PurchaseService extends ChangeNotifier {
   static const String plusMonthlyId = BillingConfig.plusSubscriptionId;
@@ -19,7 +20,8 @@ class PurchaseService extends ChangeNotifier {
   String? _errorMessage;
   List<ProductDetails> _products = [];
   final Set<String> _ownedProductIds = {};
-  void Function(SubscriptionTier tier)? _onTierUnlocked;
+  Future<void> Function(EntitlementSnapshot entitlement)?
+      _onEntitlementVerified;
 
   bool get available => _available;
   bool get loading => _loading;
@@ -44,9 +46,10 @@ class PurchaseService extends ChangeNotifier {
   }
 
   Future<void> init({
-    required void Function(SubscriptionTier tier) onTierUnlocked,
+    required Future<void> Function(EntitlementSnapshot entitlement)
+        onEntitlementVerified,
   }) async {
-    _onTierUnlocked = onTierUnlocked;
+    _onEntitlementVerified = onEntitlementVerified;
     _subscription = _iap.purchaseStream.listen(
       _handlePurchases,
       onDone: () => _subscription?.cancel(),
@@ -119,6 +122,7 @@ class PurchaseService extends ChangeNotifier {
   Future<void> _handlePurchases(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       if (!_productIds.contains(purchase.productID)) continue;
+      var verified = false;
 
       if (purchase.status == PurchaseStatus.pending) {
         _purchasePending = true;
@@ -127,14 +131,24 @@ class PurchaseService extends ChangeNotifier {
         _purchasePending = false;
       } else if (purchase.status == PurchaseStatus.purchased ||
           purchase.status == PurchaseStatus.restored) {
-        _ownedProductIds.add(purchase.productID);
-        _onTierUnlocked?.call(ownedTier);
-        _purchasePending = false;
+        try {
+          final entitlement = await EntitlementService.verifyPurchase(
+            productId: purchase.productID,
+            purchaseToken: purchase.verificationData.serverVerificationData,
+          );
+          _ownedProductIds.add(purchase.productID);
+          await _onEntitlementVerified?.call(entitlement);
+          _purchasePending = false;
+          verified = true;
+        } catch (error) {
+          _errorMessage = error.toString().replaceFirst('Exception: ', '');
+          _purchasePending = false;
+        }
       } else if (purchase.status == PurchaseStatus.canceled) {
         _purchasePending = false;
       }
 
-      if (purchase.pendingCompletePurchase) {
+      if (verified && purchase.pendingCompletePurchase) {
         await _iap.completePurchase(purchase);
       }
     }

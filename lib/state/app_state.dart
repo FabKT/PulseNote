@@ -16,6 +16,7 @@ import '../models/secure_folder_model.dart';
 import '../models/subscription_tier.dart';
 import '../services/audio_service.dart';
 import '../services/foreground_service.dart';
+import '../services/entitlement_service.dart';
 import '../services/keyword_detection_service.dart';
 import '../services/media_export_service.dart';
 import '../services/purchase_service.dart';
@@ -36,6 +37,8 @@ class AppState extends ChangeNotifier {
   List<SecureFolderModel> _folders = [];
   List<AudioPlaybackScheduleModel> _audioPlaybackSchedules = [];
   SubscriptionTier _tier = SubscriptionTier.free;
+  int _creditsRemaining = 0;
+  DateTime? _creditsResetAt;
   String? _currentRecordingPath;
   String _currentTriggerSource = 'manual';
   DateTime? _recordingStartTime;
@@ -70,6 +73,8 @@ class AppState extends ChangeNotifier {
   List<AudioPlaybackScheduleModel> get audioPlaybackSchedules =>
       List.unmodifiable(_audioPlaybackSchedules);
   SubscriptionTier get tier => _tier;
+  int get creditsRemaining => _creditsRemaining;
+  DateTime? get creditsResetAt => _creditsResetAt;
   bool get purchaseAvailable => _purchase.available;
   bool get purchaseLoading => _purchase.loading;
   bool get purchasePending => _purchase.purchasePending;
@@ -80,8 +85,7 @@ class AppState extends ChangeNotifier {
       .where((r) => r.cloudSynced)
       .fold(0, (sum, r) => sum + (r.sizeBytes ?? 0));
   bool get isOverQuota =>
-      _tier == SubscriptionTier.free &&
-      cloudUsedBytes >= freeStorageQuotaBytes;
+      _tier == SubscriptionTier.free && cloudUsedBytes >= freeStorageQuotaBytes;
   List<RecordingModel> get overQuotaRecordings =>
       _recordings.where((r) => r.overQuotaDeadline != null).toList();
   bool get canEnableKeywordTrigger => _keywords.isNotEmpty;
@@ -121,15 +125,33 @@ class AppState extends ChangeNotifier {
   Future<void> _init() async {
     await _loadAll();
     await _configureScheduledAudioPlayer();
-    await _purchase.init(onTierUnlocked: (unlockedTier) {
-      setTier(unlockedTier);
+    await _purchase.init(onEntitlementVerified: (entitlement) async {
+      await _applyEntitlement(entitlement);
     });
     _purchase.addListener(notifyListeners);
     FlutterForegroundTask.addTaskDataCallback(_onForegroundTick);
     _startLocalTimer();
     notifyListeners();
     await _sync.init();
+    await refreshEntitlement();
     await _pullRemoteData();
+  }
+
+  Future<void> refreshEntitlement() async {
+    try {
+      await _applyEntitlement(await EntitlementService.fetch());
+    } catch (_) {
+      // Conserve le dernier droit validé pour les fonctions locales hors ligne.
+    }
+  }
+
+  Future<void> _applyEntitlement(EntitlementSnapshot entitlement) async {
+    _tier = entitlement.tier;
+    _creditsRemaining = entitlement.creditsRemaining;
+    _creditsResetAt = entitlement.creditsResetAt;
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(BillingConfig.subscriptionTierKey, _tier.index);
+    notifyListeners();
   }
 
   // Récupère les données Supabase absentes en local (connexion sur un
@@ -166,11 +188,9 @@ class AppState extends ChangeNotifier {
       );
 
       final remotePlaybackSchedules = await _sync.pullAudioPlaybackSchedules();
-      final localPlaybackIds =
-          _audioPlaybackSchedules.map((s) => s.id).toSet();
+      final localPlaybackIds = _audioPlaybackSchedules.map((s) => s.id).toSet();
       _audioPlaybackSchedules.addAll(
-        remotePlaybackSchedules
-            .where((s) => !localPlaybackIds.contains(s.id)),
+        remotePlaybackSchedules.where((s) => !localPlaybackIds.contains(s.id)),
       );
 
       await _saveRecordings();
@@ -188,7 +208,8 @@ class AppState extends ChangeNotifier {
   // Télécharge l'audio depuis Supabase Storage si l'enregistrement provient
   // d'un autre appareil et n'a pas encore de copie locale.
   Future<bool> _ensureRecordingAudio(RecordingModel recording) async {
-    if (recording.filePath.isNotEmpty && await File(recording.filePath).exists()) {
+    if (recording.filePath.isNotEmpty &&
+        await File(recording.filePath).exists()) {
       return true;
     }
     if (recording.storagePath == null) return false;
@@ -909,6 +930,7 @@ class AppState extends ChangeNotifier {
     await _ensureRecordingAudio(_recordings[i]);
     _recordings[i].transcription =
         await _transcription.transcribeAudio(_recordings[i].filePath);
+    await refreshEntitlement();
     _recordings[i].updatedAt = DateTime.now();
     await _saveRecordings();
     unawaited(_sync.upsertRecording(_recordings[i]));
@@ -1013,13 +1035,45 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<void> clearLocalAccountData() async {
+    await _scheduledAudioPlayer.stop();
+    for (final recording in List<RecordingModel>.from(_recordings)) {
+      try {
+        await _audio.deleteFile(recording.filePath);
+      } catch (_) {}
+    }
+    _keywords.clear();
+    _schedules.clear();
+    _recordings.clear();
+    _folders.clear();
+    _audioPlaybackSchedules.clear();
+    _tier = SubscriptionTier.free;
+
+    final p = await SharedPreferences.getInstance();
+    for (final key in const [
+      'keywords_v2',
+      'schedules_v2',
+      'recordings_v2',
+      'folders_v1',
+      'audio_playback_schedules_v1',
+      BillingConfig.subscriptionTierKey,
+      BillingConfig.legacyDevEntitlementKey,
+      'sync_queue_v1',
+    ]) {
+      await p.remove(key);
+    }
+    notifyListeners();
+  }
+
   Future<void> _loadAll() async {
     final p = await SharedPreferences.getInstance();
     final legacyPremium = p.getBool(BillingConfig.legacyDevEntitlementKey);
     final storedTierIndex = p.getInt(BillingConfig.subscriptionTierKey);
     _tier = storedTierIndex != null
         ? SubscriptionTier.values[storedTierIndex]
-        : (legacyPremium == true ? SubscriptionTier.pro : SubscriptionTier.free);
+        : (legacyPremium == true
+            ? SubscriptionTier.pro
+            : SubscriptionTier.free);
 
     final kj = p.getString('keywords_v2');
     if (kj != null) {

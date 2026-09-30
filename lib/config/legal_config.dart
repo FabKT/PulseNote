@@ -6,6 +6,8 @@ class LegalConfig {
       'https://zippy-pithivier-16e4a6.netlify.app/';
   static const String termsOfServiceUrl =
       'https://zippy-pithivier-16e4a6.netlify.app/conditions.html';
+  static const String accountDeletionUrl =
+      'https://zippy-pithivier-16e4a6.netlify.app/suppression-compte.html';
 
   static const String supportEmail = 'tayoufabiokamogne@gmail.com';
 
