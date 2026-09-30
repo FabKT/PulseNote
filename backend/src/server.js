@@ -443,7 +443,11 @@ async function transcribeLargeAudioFile(filePath) {
 }
 
 app.get('/health', (_, res) => {
-  res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
+  res.json({
+    ok: true,
+    service: 'ultimate-audio-recorder-backend',
+    version: '2026-09-30-entitlements',
+  });
 });
 
 app.get('/me/entitlements', requireAuth, async (req, res) => {
