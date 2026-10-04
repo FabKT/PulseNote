@@ -7,6 +7,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../config/billing_config.dart';
 import '../models/audio_playback_schedule_model.dart';
 import '../models/keyword_model.dart';
@@ -175,6 +176,17 @@ class AppState extends ChangeNotifier {
         remoteFolders.where((f) => !localFolderIds.contains(f.id)),
       );
 
+      // Audio rattache a un dossier inconnu ici (dossier partage quitte par
+      // son proprietaire) : on reprend le dossier attribue par le serveur.
+      final knownFolderIds = _folders.map((f) => f.id).toSet();
+      final remoteById = {for (final r in remoteRecordings) r.id: r};
+      for (final recording in _recordings) {
+        final folderId = recording.folderId;
+        if (folderId == null || knownFolderIds.contains(folderId)) continue;
+        final remote = remoteById[recording.id];
+        if (remote != null) recording.folderId = remote.folderId;
+      }
+
       final remoteKeywords = await _sync.pullKeywords();
       final localKeywordIds = _keywords.map((k) => k.id).toSet();
       _keywords.addAll(
@@ -332,7 +344,7 @@ class AppState extends ChangeNotifier {
     if (_currentRecordingPath != null) {
       final triggerSource = _currentTriggerSource;
       final rec = RecordingModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: const Uuid().v4(),
         filePath: _currentRecordingPath!,
         createdAt: _recordingStartTime ?? DateTime.now(),
         duration: duration,
@@ -726,7 +738,7 @@ class AppState extends ChangeNotifier {
     final importDir = Directory('${dir.path}/imported_audio');
     if (!await importDir.exists()) await importDir.create(recursive: true);
     final extension = source.path.split('.').last.toLowerCase();
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    final id = const Uuid().v4();
     final cleanName =
         displayName.trim().isEmpty ? 'Audio importé' : displayName.trim();
     final target = File('${importDir.path}/audio_$id.$extension');
@@ -807,7 +819,7 @@ class AppState extends ChangeNotifier {
     final cleanPin = pin?.trim() ?? '';
     if (cleanName.isEmpty) return;
     final folder = SecureFolderModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: const Uuid().v4(),
       name: cleanName,
       pinHash: cleanPin.isEmpty ? null : SecureFolderModel.hashPin(cleanPin),
       createdAt: DateTime.now(),
@@ -826,6 +838,20 @@ class AppState extends ChangeNotifier {
     await _saveFolders();
     await _saveRecordings();
     unawaited(_sync.deleteFolder(id));
+    notifyListeners();
+  }
+
+  // Apres avoir quitte un dossier partage : le serveur a deja retire le
+  // dossier et desaffecte les audios, on aligne seulement l'etat local (sans
+  // file de synchronisation). Les copies recues par l'autre partie arrivent
+  // chez elle au prochain _pullRemoteData.
+  Future<void> detachFolderLocally(String folderId) async {
+    _folders.removeWhere((f) => f.id == folderId);
+    for (final recording in _recordings) {
+      if (recording.folderId == folderId) recording.folderId = null;
+    }
+    await _saveFolders();
+    await _saveRecordings();
     notifyListeners();
   }
 
@@ -862,7 +888,7 @@ class AppState extends ChangeNotifier {
   }) async {
     if (_recordingById(recordingId) == null) return;
     final schedule = AudioPlaybackScheduleModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: const Uuid().v4(),
       recordingId: recordingId,
       time: time,
       recurrence: recurrence,

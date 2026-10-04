@@ -11,13 +11,16 @@ import multer from 'multer';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import admin from 'firebase-admin';
+import {
+  removeStoragePaths,
+  removeStoragePrefix,
+} from './account-cleanup.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
 const execFileAsync = promisify(execFile);
 
 const openaiApiKey = process.env.OPENAI_API_KEY;
-const appClientToken = process.env.APP_CLIENT_TOKEN;
 const transcriptionModel =
   process.env.TRANSCRIPTION_MODEL || 'gpt-4o-transcribe';
 const requestedRealtimeTranscriptionModel =
@@ -44,20 +47,20 @@ const plusProductId = 'ultimate_audio_recorder_plus_monthly';
 const proProductId = 'ultimate_audio_recorder_pro_monthly';
 const monthlyProCredits = 1000;
 const directTranscriptionMaxBytes = 24 * 1024 * 1024;
-const uploadMaxBytes = Number(process.env.MAX_AUDIO_UPLOAD_MB || 500) * 1024 * 1024;
+const uploadMaxBytes = Number(process.env.MAX_AUDIO_UPLOAD_MB || 200) * 1024 * 1024;
+// Une session temps reel OpenAI dure au plus 10 minutes : on debite d'avance
+// un credit par minute de session, rembourse si la creation echoue.
+const realtimeSessionSeconds = 600;
+const realtimeSessionCredits = Math.ceil(realtimeSessionSeconds / 60);
 const chunkSeconds = Number(process.env.TRANSCRIPTION_CHUNK_SECONDS || 600);
 
 if (!openaiApiKey) {
   throw new Error('OPENAI_API_KEY is required.');
 }
 
-if (!appClientToken || appClientToken.length < 24) {
-  throw new Error('APP_CLIENT_TOKEN must be a long random secret.');
-}
-
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
-    'SUPABASE_URL/SUPABASE_ANON_KEY not set: Supabase-authenticated clients will be rejected (Firebase and x-app-token still work).',
+    'SUPABASE_URL/SUPABASE_ANON_KEY not set: Supabase-authenticated clients will be rejected.',
   );
 }
 
@@ -277,6 +280,45 @@ app.disable('x-powered-by');
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '1mb' }));
 
+// Limiteur en memoire par cle (IP ou utilisateur). Suffisant pour une seule
+// instance ; au-dela, utiliser un stockage partage (Redis...).
+function rateLimit({ windowMs, max, key }) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, entry] of hits) {
+      if (entry.resetAt <= now) hits.delete(k);
+    }
+  }, windowMs).unref();
+  return (req, res, next) => {
+    const now = Date.now();
+    const k = key(req);
+    let entry = hits.get(k);
+    if (!entry || entry.resetAt <= now) {
+      entry = { count: 0, resetAt: now + windowMs };
+      hits.set(k, entry);
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      res.setHeader('Retry-After', Math.ceil((entry.resetAt - now) / 1000));
+      return res.status(429).json({ error: 'Trop de requêtes, réessayez plus tard.' });
+    }
+    next();
+  };
+}
+
+// Render / Cloud Run placent un proxy devant l'app : req.ip doit venir de
+// X-Forwarded-For pour que la limite par IP soit pertinente.
+app.set('trust proxy', 1);
+app.use(
+  rateLimit({ windowMs: 60_000, max: 120, key: (req) => `ip:${req.ip}` }),
+);
+const aiRateLimit = rateLimit({
+  windowMs: 60 * 60_000,
+  max: 60,
+  key: (req) => `user:${req.user?.id || req.ip}`,
+});
+
 async function requireAuth(req, res, next) {
   const authorization = req.header('authorization') || '';
   const [, bearerToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
@@ -308,11 +350,26 @@ async function requireAuth(req, res, next) {
     }
   }
 
-  const token = req.header('x-app-token');
-  if (token !== appClientToken) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  // Plus de repli sur un jeton applicatif partage : embarque dans l'APK, il
+  // etait extractible et ouvrait les routes OpenAI a n'importe qui.
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+
+// Les routes IA payantes exigent un compte Supabase avec un abonnement Pro
+// actif. Place avant multer pour ne pas recevoir un gros fichier pour rien.
+async function requirePro(req, res, next) {
+  if (req.authProvider !== 'supabase' || !req.user?.id) {
+    return res.status(401).json({ error: 'Authentification utilisateur requise.' });
   }
-  next();
+  try {
+    await requireProEntitlement(req.user.id);
+    next();
+  } catch (error) {
+    if (!error?.status) console.error('Entitlement check failed:', error);
+    res
+      .status(error?.status || 500)
+      .json({ error: error?.status ? error.message : 'Droits utilisateur indisponibles.' });
+  }
 }
 
 function safeOpenAiError(error) {
@@ -446,7 +503,7 @@ app.get('/health', (_, res) => {
   res.json({
     ok: true,
     service: 'ultimate-audio-recorder-backend',
-    version: '2026-09-30-entitlements',
+    version: '2026-10-05-account-deletion',
   });
 });
 
@@ -495,7 +552,7 @@ app.post('/billing/verify', requireAuth, async (req, res) => {
         tier === 'pro'
           ? isNewProPeriod
             ? monthlyProCredits
-            : existing?.credits_remaining || monthlyProCredits
+            : existing?.credits_remaining ?? monthlyProCredits
           : 0,
       credits_reset_at: tier === 'pro' ? verified.expiryTime : null,
       updated_at: new Date().toISOString(),
@@ -513,19 +570,96 @@ app.post('/billing/verify', requireAuth, async (req, res) => {
   }
 });
 
-async function removeUserStorage(bucket, userId) {
-  const { data, error } = await supabaseAdmin.storage
-    .from(bucket)
-    .list(userId, { limit: 1000 });
-  if (error) throw error;
-  const paths = (data || [])
-    .filter((entry) => entry.name && entry.id)
-    .map((entry) => `${userId}/${entry.name}`);
-  if (paths.length === 0) return;
-  const { error: removeError } = await supabaseAdmin.storage
-    .from(bucket)
-    .remove(paths);
-  if (removeError) throw removeError;
+async function allFriendMessageAudioPaths(userId) {
+  const paths = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from('friend_messages')
+      .select('audio_path')
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .not('audio_path', 'is', null)
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const rows = data || [];
+    paths.push(...rows.map((row) => row.audio_path).filter(Boolean));
+    if (rows.length < pageSize) break;
+    from += rows.length;
+  }
+  return paths;
+}
+
+async function allOwnedFolderShares(userId) {
+  const shares = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from('folder_shares')
+      .select('*')
+      .eq('owner_id', userId)
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const rows = data || [];
+    shares.push(...rows);
+    if (rows.length < pageSize) break;
+    from += rows.length;
+  }
+  return shares;
+}
+
+async function preserveFriendsOwnContributions(userId) {
+  const ownedShares = await allOwnedFolderShares(userId);
+
+  for (const share of ownedShares) {
+    if (share.mode === 'live') {
+      const { data: contributions, error: contributionsError } =
+        await supabaseAdmin
+          .from('recordings')
+          .select('id')
+          .eq('folder_id', share.folder_id)
+          .eq('user_id', share.recipient_id)
+          .limit(1);
+      if (contributionsError) throw contributionsError;
+
+      if ((contributions || []).length > 0) {
+        const folderId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const { error: folderError } = await supabaseAdmin
+          .from('folders')
+          .insert({
+            id: folderId,
+            user_id: share.recipient_id,
+            name: share.folder_name,
+            created_at: now,
+            updated_at: now,
+          });
+        if (folderError) throw folderError;
+
+        const { error: moveError } = await supabaseAdmin
+          .from('recordings')
+          .update({ folder_id: folderId, updated_at: now })
+          .eq('folder_id', share.folder_id)
+          .eq('user_id', share.recipient_id);
+        if (moveError) throw moveError;
+      }
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from('folder_shares')
+      .delete()
+      .eq('id', share.id);
+    if (deleteError) throw deleteError;
+  }
+
+  const { error: receivedDeleteError } = await supabaseAdmin
+    .from('folder_shares')
+    .delete()
+    .eq('recipient_id', userId);
+  if (receivedDeleteError) throw receivedDeleteError;
 }
 
 app.delete('/account', requireAuth, async (req, res) => {
@@ -542,9 +676,17 @@ app.delete('/account', requireAuth, async (req, res) => {
 
   try {
     const userId = req.user.id;
+    await preserveFriendsOwnContributions(userId);
+    const messageAudioPaths = await allFriendMessageAudioPaths(userId);
+    await removeStoragePaths(
+      supabaseAdmin.storage,
+      'friend-audio',
+      messageAudioPaths,
+    );
     await Promise.all([
-      removeUserStorage('recordings-audio', userId),
-      removeUserStorage('keyword-samples', userId),
+      removeStoragePrefix(supabaseAdmin.storage, 'recordings-audio', userId),
+      removeStoragePrefix(supabaseAdmin.storage, 'keyword-samples', userId),
+      removeStoragePrefix(supabaseAdmin.storage, 'friend-audio', userId),
     ]);
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
     if (error) throw error;
@@ -555,40 +697,219 @@ app.delete('/account', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/diagnostics/openai', requireAuth, async (_, res) => {
+// ---------------------------------------------------------------------------
+// Quitter un dossier partage
+// ---------------------------------------------------------------------------
+// Un dossier partage ne se supprime pas : on le quitte. La personne qui reste
+// recoit une copie independante (fichiers dupliques, lignes a son nom) de ce
+// qu'elle voyait, pour ne rien perdre si celui qui part supprime ses audios.
+
+const recordingsBucket = 'recordings-audio';
+
+// N'accepte que les fichiers ranges sous le prefixe de leur proprietaire :
+// le service_role peut tout copier, une ligne forgee ne doit pas permettre de
+// dupliquer le fichier d'un tiers.
+function ownedStoragePath(recording) {
+  const storagePath = recording?.storage_path;
+  if (!storagePath || !storagePath.startsWith(`${recording.user_id}/`)) {
+    return null;
+  }
+  return storagePath;
+}
+
+async function copyRecordingsTo(userId, folderId, sources) {
+  const rows = [];
+  const copiedPaths = [];
   try {
-    const [fileModel, realtimeModel] = await Promise.all([
-      openai.models.retrieve(transcriptionModel),
-      openai.models.retrieve(realtimeTranscriptionModel),
-    ]);
-    res.json({
-      ok: true,
-      transcriptionModel,
-      realtimeTranscriptionModel,
-      summaryModel,
-      defaultLanguage,
-      fileModel: fileModel.id,
-      realtimeModel: realtimeModel.id,
-    });
+    for (const source of sources) {
+      const sourcePath = ownedStoragePath(source);
+      if (!sourcePath) continue;
+      const id = crypto.randomUUID();
+      const targetPath = `${userId}/${id}${path.extname(sourcePath) || '.m4a'}`;
+      const { error } = await supabaseAdmin.storage
+        .from(recordingsBucket)
+        .copy(sourcePath, targetPath);
+      if (error) throw error;
+      copiedPaths.push(targetPath);
+      rows.push({
+        id,
+        user_id: userId,
+        storage_path: targetPath,
+        created_at: source.created_at,
+        duration_ms: source.duration_ms ?? null,
+        trigger_source: source.trigger_source ?? null,
+        waveform: source.waveform ?? [],
+        display_name: source.display_name ?? null,
+        is_favorite: false,
+        folder_id: folderId,
+        transcription: source.transcription ?? null,
+        summary: source.summary ?? null,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    if (rows.length > 0) {
+      const { error } = await supabaseAdmin.from('recordings').insert(rows);
+      if (error) throw error;
+    }
   } catch (error) {
-    console.error('OpenAI diagnostics failed:', error);
-    res.status(500).json({
-      error: 'OpenAI diagnostics failed.',
-      details: safeOpenAiError(error),
+    if (copiedPaths.length > 0) {
+      await supabaseAdmin.storage.from(recordingsBucket).remove(copiedPaths);
+    }
+    throw error;
+  }
+  return rows.length;
+}
+
+async function recordingsInFolder(folderId) {
+  const { data, error } = await supabaseAdmin
+    .from('recordings')
+    .select('*')
+    .eq('folder_id', folderId);
+  if (error) throw error;
+  return data || [];
+}
+
+async function snapshotSources(shareId) {
+  const { data: items, error } = await supabaseAdmin
+    .from('folder_share_items')
+    .select('source_recording_id')
+    .eq('share_id', shareId);
+  if (error) throw error;
+  const ids = (items || []).map((item) => item.source_recording_id);
+  if (ids.length === 0) return [];
+  const { data, error: recordingsError } = await supabaseAdmin
+    .from('recordings')
+    .select('*')
+    .in('id', ids);
+  if (recordingsError) throw recordingsError;
+  return data || [];
+}
+
+async function deleteShare(shareId) {
+  const { error } = await supabaseAdmin
+    .from('folder_shares')
+    .delete()
+    .eq('id', shareId);
+  if (error) throw error;
+}
+
+// Le destinataire part : le proprietaire garde une copie de ce que le
+// destinataire avait ajoute ; les originaux redeviennent "sans dossier" chez
+// le destinataire.
+async function recipientLeavesShare(share) {
+  if (share.mode === 'live') {
+    const contributed = (await recordingsInFolder(share.folder_id)).filter(
+      (recording) => recording.user_id === share.recipient_id,
+    );
+    await copyRecordingsTo(share.owner_id, share.folder_id, contributed);
+    const { error } = await supabaseAdmin
+      .from('recordings')
+      .update({ folder_id: null, updated_at: new Date().toISOString() })
+      .eq('folder_id', share.folder_id)
+      .eq('user_id', share.recipient_id);
+    if (error) throw error;
+  }
+  await deleteShare(share.id);
+}
+
+// Le proprietaire part : chaque destinataire recoit son propre dossier avec
+// une copie de ce qu'il voyait, puis le dossier d'origine disparait et les
+// audios du proprietaire redeviennent "sans dossier". Chaque partage est
+// supprime des qu'il est traite : une nouvelle tentative apres une erreur ne
+// duplique pas les copies deja faites.
+async function ownerLeavesFolder(folderId) {
+  const { data: shares, error } = await supabaseAdmin
+    .from('folder_shares')
+    .select('*')
+    .eq('folder_id', folderId);
+  if (error) throw error;
+  // Releve unique : les ajouts d'un destinataire sont deplaces dans son
+  // nouveau dossier au fil de la boucle, mais les autres doivent en recevoir
+  // une copie (leurs fichiers ne bougent pas).
+  const liveRecordings = await recordingsInFolder(folderId);
+
+  for (const share of shares || []) {
+    const recipientId = share.recipient_id;
+    const newFolderId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const { error: folderError } = await supabaseAdmin.from('folders').insert({
+      id: newFolderId,
+      user_id: recipientId,
+      name: share.folder_name,
+      created_at: now,
+      updated_at: now,
     });
+    if (folderError) throw folderError;
+
+    const visible =
+      share.mode === 'live' ? liveRecordings : await snapshotSources(share.id);
+    await copyRecordingsTo(
+      recipientId,
+      newFolderId,
+      visible.filter((recording) => recording.user_id !== recipientId),
+    );
+    if (share.mode === 'live') {
+      const { error: moveError } = await supabaseAdmin
+        .from('recordings')
+        .update({ folder_id: newFolderId, updated_at: now })
+        .eq('folder_id', folderId)
+        .eq('user_id', recipientId);
+      if (moveError) throw moveError;
+    }
+    await deleteShare(share.id);
+  }
+
+  const { error: unfileError } = await supabaseAdmin
+    .from('recordings')
+    .update({ folder_id: null, updated_at: new Date().toISOString() })
+    .eq('folder_id', folderId);
+  if (unfileError) throw unfileError;
+  const { error: deleteError } = await supabaseAdmin
+    .from('folders')
+    .delete()
+    .eq('id', folderId);
+  if (deleteError) throw deleteError;
+}
+
+app.post('/shares/:id/leave', requireAuth, async (req, res) => {
+  if (req.authProvider !== 'supabase' || !req.user?.id) {
+    return res.status(401).json({ error: 'Authentification utilisateur requise.' });
+  }
+  if (!supabaseAdmin) {
+    return res.status(503).json({ error: 'Service de partage non configuré.' });
+  }
+
+  try {
+    const userId = req.user.id;
+    const { data: share, error } = await supabaseAdmin
+      .from('folder_shares')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!share || ![share.owner_id, share.recipient_id].includes(userId)) {
+      return res.status(404).json({ error: 'Dossier partagé introuvable.' });
+    }
+
+    if (share.owner_id === userId) {
+      await ownerLeavesFolder(share.folder_id);
+    } else {
+      await recipientLeavesShare(share);
+    }
+    res.json({ ok: true, folderId: share.folder_id });
+  } catch (error) {
+    console.error('Leaving shared folder failed:', error);
+    res.status(500).json({ error: 'Impossible de quitter ce dossier.' });
   }
 });
 
-app.post('/transcribe', requireAuth, upload.single('audio'), async (req, res) => {
+app.post('/transcribe', requireAuth, requirePro, aiRateLimit, upload.single('audio'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Missing audio file.' });
   }
 
   let chargedCredits = 0;
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: 'Authentification utilisateur requise.' });
-    }
     const creditCost = await audioCreditCost(req.file.path);
     const creditsRemaining = await consumeCredits(req.user.id, creditCost);
     chargedCredits = creditCost;
@@ -615,17 +936,13 @@ app.post('/transcribe', requireAuth, upload.single('audio'), async (req, res) =>
   }
 });
 
-app.post('/summarize', requireAuth, async (req, res) => {
+app.post('/summarize', requireAuth, requirePro, aiRateLimit, async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   if (!text) {
     return res.status(400).json({ error: 'Missing text.' });
   }
 
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: 'Authentification utilisateur requise.' });
-    }
-    await requireProEntitlement(req.user.id);
     const response = await openai.responses.create({
       model: summaryModel,
       input: [
@@ -654,8 +971,11 @@ app.post('/summarize', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
+app.post('/realtime/transcription-session', requireAuth, requirePro, aiRateLimit, async (req, res) => {
+  let chargedCredits = 0;
   try {
+    await consumeCredits(req.user.id, realtimeSessionCredits);
+    chargedCredits = realtimeSessionCredits;
     const response = await fetch(
       'https://api.openai.com/v1/realtime/client_secrets',
       {
@@ -667,7 +987,7 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
         body: JSON.stringify({
           expires_after: {
             anchor: 'created_at',
-            seconds: 600,
+            seconds: realtimeSessionSeconds,
           },
           session: {
             type: 'transcription',
@@ -696,6 +1016,7 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
     const payload = await response.json();
     if (!response.ok) {
       console.error('Realtime session failed:', payload);
+      await refundCredits(req.user.id, chargedCredits);
       return res.status(500).json({
         error: 'Realtime session failed.',
         details: {
@@ -710,10 +1031,13 @@ app.post('/realtime/transcription-session', requireAuth, async (_, res) => {
       });
     }
 
-    res.json(payload);
+    res.json({ ...payload, creditsUsed: chargedCredits });
   } catch (error) {
     console.error('Realtime session failed:', error);
-    res.status(500).json({
+    if (chargedCredits > 0) {
+      await refundCredits(req.user.id, chargedCredits);
+    }
+    res.status(error?.status || 500).json({
       error: 'Realtime session failed.',
       details: safeOpenAiError(error),
     });

@@ -20,13 +20,9 @@ Ensuite ouvre `.env` et remplace :
 
 ```env
 OPENAI_API_KEY=ta_cle_openai
-APP_CLIENT_TOKEN=un_long_secret_aleatoire
-```
-
-Pour générer un secret :
-
-```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+SUPABASE_URL=https://ton-projet.supabase.co
+SUPABASE_ANON_KEY=ta_cle_anon
+SUPABASE_SERVICE_ROLE_KEY=ta_cle_service_role
 ```
 
 ## Lancer le backend
@@ -43,11 +39,17 @@ curl.exe http://localhost:8787/health
 
 ## Endpoints
 
-Tous les endpoints protégés demandent l'en-tête :
+Tous les endpoints protégés demandent le jeton de session Supabase de
+l'utilisateur :
 
 ```text
-x-app-token: APP_CLIENT_TOKEN
+Authorization: Bearer <access_token Supabase>
 ```
+
+Il n'existe plus de jeton applicatif partagé : un secret embarqué dans l'APK
+est extractible. `/transcribe`, `/summarize` et
+`/realtime/transcription-session` exigent en plus un abonnement Pro actif et
+sont limités à 60 appels par heure et par utilisateur.
 
 ### Transcription fichier
 
@@ -96,7 +98,9 @@ Réponse :
 POST /realtime/transcription-session
 ```
 
-Réponse : objet de session OpenAI contenant un `client_secret` éphémère.
+Réponse : objet de session OpenAI contenant un `client_secret` éphémère
+(valable 10 minutes). Débite 10 crédits IA, remboursés si la session ne peut
+pas être créée.
 
 ## Déploiement recommandé
 

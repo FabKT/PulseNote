@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'screens/folders_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/continuous_playback_screen.dart';
+import 'screens/friends_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/import_audio_screen.dart';
 import 'screens/keywords_screen.dart';
@@ -42,7 +43,7 @@ class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 1;
 
   final _screens = const [
-    ScheduleScreen(),
+    FriendsScreen(),
     HomeScreen(),
     MenuScreen(),
   ];
@@ -60,6 +61,8 @@ class _MainNavigationState extends State<MainNavigation> {
       openRecordings: () => _openStandalone(const RecordingsScreen()),
       openKeywords: () => _openStandalone(const KeywordsScreen()),
       openFolders: () => _openStandalone(const FoldersScreen()),
+      openSchedule: () =>
+          _openStandalone(const ScheduleScreen(showBackButton: true)),
       openScheduledAudio: () => _openStandalone(const ScheduledAudioScreen()),
       openContinuousPlayback: () =>
           _openStandalone(const ContinuousPlaybackScreen()),
@@ -95,7 +98,7 @@ class _MainNavigationState extends State<MainNavigation> {
                         left: sideOffset,
                         bottom: 4,
                         child: _BottomGlyph(
-                          icon: Icons.schedule_rounded,
+                          icon: Icons.people_alt_rounded,
                           selected: _currentIndex == 0,
                           onTap: () => setState(() => _currentIndex = 0),
                         ),
@@ -133,6 +136,7 @@ class MenuNavigationScope extends InheritedWidget {
   final VoidCallback openRecordings;
   final VoidCallback openKeywords;
   final VoidCallback openFolders;
+  final VoidCallback openSchedule;
   final VoidCallback openScheduledAudio;
   final VoidCallback openContinuousPlayback;
   final VoidCallback openImportAudio;
@@ -145,6 +149,7 @@ class MenuNavigationScope extends InheritedWidget {
     required this.openRecordings,
     required this.openKeywords,
     required this.openFolders,
+    required this.openSchedule,
     required this.openScheduledAudio,
     required this.openContinuousPlayback,
     required this.openImportAudio,

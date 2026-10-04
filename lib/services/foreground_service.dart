@@ -37,10 +37,6 @@ class ForegroundService {
       await FlutterForegroundTask.requestNotificationPermission();
     }
 
-    if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
-      await FlutterForegroundTask.requestIgnoreBatteryOptimization();
-    }
-
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.restartService();
       return;

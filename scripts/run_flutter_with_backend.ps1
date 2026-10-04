@@ -1,8 +1,6 @@
 param(
   [string]$BackendBaseUrl,
 
-  [string]$AppClientToken,
-
   [string]$SupabaseUrl,
 
   [string]$SupabaseAnonKey,
@@ -12,7 +10,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Set-Location "C:\dev1\audio_recorder_app"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $ProjectRoot
 
 if ([string]::IsNullOrWhiteSpace($BackendBaseUrl)) {
   $ip = Get-NetIPAddress -AddressFamily IPv4 |
@@ -27,28 +26,11 @@ if ([string]::IsNullOrWhiteSpace($BackendBaseUrl)) {
     throw "Impossible de detecter l'IP locale. Precise -BackendBaseUrl manuellement."
   }
 
-  $BackendBaseUrl = "http://$ip:8787"
-}
-
-if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
-  $envPath = "C:\dev1\audio_recorder_app\backend\.env"
-  if (!(Test-Path $envPath)) {
-    throw "backend\.env introuvable. Precise -AppClientToken manuellement."
-  }
-
-  $line = Get-Content $envPath |
-    Where-Object { $_ -match "^APP_CLIENT_TOKEN=" } |
-    Select-Object -First 1
-
-  if ([string]::IsNullOrWhiteSpace($line)) {
-    throw "APP_CLIENT_TOKEN introuvable dans backend\.env."
-  }
-
-  $AppClientToken = $line.Substring("APP_CLIENT_TOKEN=".Length).Trim()
+  $BackendBaseUrl = "http://${ip}:8787"
 }
 
 function Read-BackendEnvValue($key) {
-  $envPath = "C:\dev1\audio_recorder_app\backend\.env"
+  $envPath = Join-Path $ProjectRoot "backend\.env"
   if (!(Test-Path $envPath)) { return "" }
   $line = Get-Content $envPath |
     Where-Object { $_ -match "^$key=" } |
@@ -66,11 +48,14 @@ if ([string]::IsNullOrWhiteSpace($SupabaseAnonKey)) {
 }
 
 Write-Host "Backend utilise par l'app: $BackendBaseUrl"
-Write-Host "Token app: charge depuis backend\.env"
 
-& "C:\dev1\Flutter\flutter\bin\flutter.bat" run `
-  "--dart-define=BACKEND_BASE_URL=$BackendBaseUrl" `
-  "--dart-define=APP_CLIENT_TOKEN=$AppClientToken" `
-  "--dart-define=SUPABASE_URL=$SupabaseUrl" `
-  "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey" `
-  "--dart-define=GOOGLE_WEB_CLIENT_ID=$GoogleWebClientId"
+$defines = @(
+  "--dart-define=BACKEND_BASE_URL=$BackendBaseUrl",
+  "--dart-define=SUPABASE_URL=$SupabaseUrl",
+  "--dart-define=SUPABASE_ANON_KEY=$SupabaseAnonKey"
+)
+if (![string]::IsNullOrWhiteSpace($GoogleWebClientId)) {
+  $defines += "--dart-define=GOOGLE_WEB_CLIENT_ID=$GoogleWebClientId"
+}
+
+& flutter run @defines

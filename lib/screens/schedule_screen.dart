@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../models/premium_feature.dart';
 import '../models/schedule_model.dart';
 import '../models/subscription_tier.dart';
@@ -10,7 +11,9 @@ import '../widgets/schedule_card.dart';
 import '../widgets/custom_time_picker.dart';
 
 class ScheduleScreen extends StatefulWidget {
-  const ScheduleScreen({super.key});
+  final bool showBackButton;
+
+  const ScheduleScreen({super.key, this.showBackButton = false});
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -38,12 +41,13 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        top: false,
+        top: widget.showBackButton,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Header(
               tabs: _tabs,
+              showBackButton: widget.showBackButton,
               onCreate: () => _showCreateDialog(context),
             ),
             Expanded(
@@ -114,8 +118,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
 
   Future<void> _showCreateDialog(BuildContext ctx) async {
     final wantsKeywordMode = _tabs.index == 1;
-    if (wantsKeywordMode &&
-        !ctx.read<AppState>().tier.hasKeywordSchedules) {
+    if (wantsKeywordMode && !ctx.read<AppState>().tier.hasKeywordSchedules) {
       await showPaywall(ctx, feature: PremiumFeature.keywordTrigger);
       return;
     }
@@ -147,8 +150,13 @@ class _ScheduleScreenState extends State<ScheduleScreen>
 
 class _Header extends StatelessWidget {
   final TabController tabs;
+  final bool showBackButton;
   final VoidCallback onCreate;
-  const _Header({required this.tabs, required this.onCreate});
+  const _Header({
+    required this.tabs,
+    required this.showBackButton,
+    required this.onCreate,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -156,6 +164,15 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
+          if (showBackButton) ...[
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              tooltip: 'Retour',
+              icon: const Icon(Icons.arrow_back_rounded),
+              color: AppTheme.text,
+            ),
+            const SizedBox(width: 4),
+          ],
           const Expanded(
             child: Text('Planification',
                 style: TextStyle(
@@ -355,7 +372,7 @@ class _CreateScheduleSheetState extends State<_CreateScheduleSheet> {
     }
     final existing = widget.scheduleToEdit;
     final schedule = ScheduleModel(
-      id: existing?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: existing?.id ?? const Uuid().v4(),
       startTime: _start,
       endTime: _end,
       mode: _mode,

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../services/account_service.dart';
+import '../services/friends_service.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
 
@@ -76,6 +77,8 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ]),
               ),
+              const SizedBox(height: 12),
+              const _UsernameTile(),
               const SizedBox(height: 18),
               GridView.count(
                 crossAxisCount: 2,
@@ -161,6 +164,157 @@ class ProfileScreen extends StatelessWidget {
             content: Text(error.toString().replaceFirst('Exception: ', ''))),
       );
     }
+  }
+}
+
+class _UsernameTile extends StatefulWidget {
+  const _UsernameTile();
+
+  @override
+  State<_UsernameTile> createState() => _UsernameTileState();
+}
+
+class _UsernameTileState extends State<_UsernameTile> {
+  String? _username;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final profile = await FriendsService.myProfile();
+      if (mounted) {
+        setState(() {
+          _username = profile.username;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _edit() async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _UsernameDialog(initialValue: _username ?? ''),
+    );
+    if (value == null || !mounted) return;
+    try {
+      final profile = await FriendsService.updateUsername(value);
+      if (!mounted) return;
+      setState(() => _username = profile.username);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nom d’utilisateur mis à jour.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().contains('username_taken') ||
+              error.toString().contains('duplicate key')
+          ? 'Ce nom d’utilisateur est déjà utilisé.'
+          : 'Impossible de modifier le nom d’utilisateur.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: AppTheme.panel(radius: 14),
+      child: ListTile(
+        leading: const Icon(Icons.alternate_email_rounded),
+        title: const Text(
+          'Nom d’utilisateur',
+          style: TextStyle(
+            color: AppTheme.text,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        subtitle: Text(
+          _loading
+              ? 'Chargement…'
+              : _username?.isNotEmpty == true
+                  ? '@$_username'
+                  : 'À configurer',
+        ),
+        trailing: IconButton(
+          tooltip: 'Modifier',
+          onPressed: _loading ? null : _edit,
+          icon: const Icon(Icons.edit_rounded),
+        ),
+      ),
+    );
+  }
+}
+
+class _UsernameDialog extends StatefulWidget {
+  final String initialValue;
+
+  const _UsernameDialog({required this.initialValue});
+
+  @override
+  State<_UsernameDialog> createState() => _UsernameDialogState();
+}
+
+class _UsernameDialogState extends State<_UsernameDialog> {
+  late final TextEditingController _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = _controller.text.trim().toLowerCase().replaceFirst('@', '');
+    if (!RegExp(r'^[a-z0-9._]{3,24}$').hasMatch(value)) {
+      setState(() =>
+          _error = 'Utilisez 3 à 24 lettres, chiffres, points ou tirets bas.');
+      return;
+    }
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Choisir un nom d’utilisateur'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        autocorrect: false,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          prefixText: '@',
+          hintText: 'mon_pseudo',
+          errorText: _error,
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    );
   }
 }
 

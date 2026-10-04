@@ -70,7 +70,7 @@ Le backend appelle OpenAI avec le modèle `gpt-4o-transcribe`.
 
 `POST /realtime/transcription-session`
 
-- Entrée : utilisateur authentifié / app autorisée
+- Entrée : utilisateur Supabase authentifié avec abonnement Pro (10 crédits)
 - Sortie : token éphémère OpenAI
 
 L'app Flutter utilise ensuite ce token pour ouvrir une connexion Realtime transcription.

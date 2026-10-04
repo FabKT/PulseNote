@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../models/keyword_model.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
@@ -283,7 +284,7 @@ class _KeywordSheetState extends State<_KeywordSheet> {
           widget.existing!.copyWith(text: text, audioSamplePath: _samplePath));
     } else {
       widget.state.addKeyword(KeywordModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: const Uuid().v4(),
         text: text,
         audioSamplePath: _samplePath,
       ));

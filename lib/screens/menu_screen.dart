@@ -48,6 +48,11 @@ class MenuScreen extends StatelessWidget {
                   onTap: nav.openFolders,
                 ),
                 _MenuTile(
+                  icon: Icons.schedule_rounded,
+                  title: 'Planification',
+                  onTap: nav.openSchedule,
+                ),
+                _MenuTile(
                   icon: Icons.schedule_send_rounded,
                   title: 'Lecture\nplanifiée',
                   onTap: nav.openScheduledAudio,

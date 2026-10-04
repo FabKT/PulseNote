@@ -8,7 +8,7 @@ param(
 
   [string]$OpenAiApiKey,
 
-  [string]$AppClientToken,
+  [string]$SupabaseServiceRoleKey,
 
   [string]$SupabaseUrl,
 
@@ -17,7 +17,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Set-Location "C:\dev1\audio_recorder_app"
+Set-Location (Split-Path -Parent $PSScriptRoot)
 
 function Require-Command($name) {
   if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
@@ -26,7 +26,7 @@ function Require-Command($name) {
 }
 
 function Read-EnvValue($key) {
-  $envPath = "C:\dev1\audio_recorder_app\backend\.env"
+  $envPath = Join-Path (Split-Path -Parent $PSScriptRoot) "backend\.env"
   if (!(Test-Path $envPath)) { return "" }
   $line = Get-Content $envPath |
     Where-Object { $_ -match "^$key=" } |
@@ -61,8 +61,8 @@ if ([string]::IsNullOrWhiteSpace($OpenAiApiKey)) {
   $OpenAiApiKey = Read-EnvValue "OPENAI_API_KEY"
 }
 
-if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
-  $AppClientToken = Read-EnvValue "APP_CLIENT_TOKEN"
+if ([string]::IsNullOrWhiteSpace($SupabaseServiceRoleKey)) {
+  $SupabaseServiceRoleKey = Read-EnvValue "SUPABASE_SERVICE_ROLE_KEY"
 }
 
 if ([string]::IsNullOrWhiteSpace($SupabaseUrl)) {
@@ -87,7 +87,7 @@ gcloud services enable `
   --project $ProjectId
 
 Ensure-Secret "pulsenote-openai-api-key" $OpenAiApiKey
-Ensure-Secret "pulsenote-app-client-token" $AppClientToken
+Ensure-Secret "pulsenote-supabase-service-role-key" $SupabaseServiceRoleKey
 
 gcloud run deploy $ServiceName `
   --project $ProjectId `
@@ -95,7 +95,7 @@ gcloud run deploy $ServiceName `
   --source "backend" `
   --allow-unauthenticated `
   --set-env-vars "TRANSCRIPTION_MODEL=gpt-4o-transcribe,REALTIME_TRANSCRIPTION_MODEL=gpt-realtime-whisper,SUMMARY_MODEL=gpt-4.1-mini,DEFAULT_LANGUAGE=fr,SUPABASE_URL=$SupabaseUrl,SUPABASE_ANON_KEY=$SupabaseAnonKey" `
-  --set-secrets "OPENAI_API_KEY=pulsenote-openai-api-key:latest,APP_CLIENT_TOKEN=pulsenote-app-client-token:latest"
+  --set-secrets "OPENAI_API_KEY=pulsenote-openai-api-key:latest,SUPABASE_SERVICE_ROLE_KEY=pulsenote-supabase-service-role-key:latest"
 
 $url = gcloud run services describe $ServiceName `
   --project $ProjectId `

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/audio_playback_schedule_model.dart';
 import '../models/premium_feature.dart';
@@ -495,7 +496,7 @@ class _CreateScheduledPlaybackSheetState
                         final weekdays = _weekdays.toList()..sort();
                         final schedule = AudioPlaybackScheduleModel(
                           id: widget.scheduleToEdit?.id ??
-                              DateTime.now().millisecondsSinceEpoch.toString(),
+                              const Uuid().v4(),
                           recordingId: _recordingId!,
                           time: TimeOfDay(hour: _hour, minute: _minute),
                           recurrence: _recurrence,

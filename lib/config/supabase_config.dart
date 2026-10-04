@@ -9,7 +9,8 @@ class SupabaseConfig {
   );
   static const _googleWebClientIdFromBuild = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '',
+    defaultValue:
+        '792550477817-96vucv9su7betb0l72hgc8cvofin3fh6.apps.googleusercontent.com',
   );
 
   static String get url => _urlFromBuild.trim();

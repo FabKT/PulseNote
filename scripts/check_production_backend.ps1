@@ -1,40 +1,20 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$BackendBaseUrl,
-
-  [string]$AppClientToken
+  [string]$BackendBaseUrl
 )
 
 $ErrorActionPreference = "Stop"
 
-Set-Location "C:\dev1\audio_recorder_app"
+# La route /diagnostics/openai a ete retiree (elle consommait l'API OpenAI
+# sans controle d'abonnement). On verifie la sante du service et que les
+# routes IA refusent bien un appel non authentifie.
+Write-Host "Backend: $BackendBaseUrl"
+Invoke-RestMethod -Uri "$BackendBaseUrl/health" -Method Get | ConvertTo-Json
 
-if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
-  $envPath = "C:\dev1\audio_recorder_app\backend\.env"
-  if (!(Test-Path $envPath)) {
-    throw "backend\.env introuvable. Precise -AppClientToken manuellement."
-  }
-
-  $line = Get-Content $envPath |
-    Where-Object { $_ -match "^APP_CLIENT_TOKEN=" } |
-    Select-Object -First 1
-
-  if ([string]::IsNullOrWhiteSpace($line)) {
-    throw "APP_CLIENT_TOKEN introuvable dans backend\.env."
-  }
-
-  $AppClientToken = $line.Substring("APP_CLIENT_TOKEN=".Length).Trim()
+try {
+  Invoke-RestMethod -Uri "$BackendBaseUrl/summarize" -Method Post `
+    -ContentType "application/json" -Body '{"text":"test"}' | Out-Null
+  throw "/summarize a repondu sans authentification : configuration dangereuse."
+} catch [System.Net.WebException] {
+  Write-Host "OK : /summarize refuse les appels non authentifies."
 }
-
-$base = $BackendBaseUrl.TrimEnd("/")
-$headers = @{ "x-app-token" = $AppClientToken }
-
-Write-Host "Health:"
-Invoke-RestMethod -Uri "$base/health" -Method Get | ConvertTo-Json
-
-Write-Host ""
-Write-Host "OpenAI diagnostics:"
-Invoke-RestMethod `
-  -Uri "$base/diagnostics/openai" `
-  -Method Get `
-  -Headers $headers | ConvertTo-Json

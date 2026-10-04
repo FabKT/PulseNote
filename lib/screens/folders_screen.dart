@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/friend_models.dart';
 import '../models/recording_model.dart';
 import '../models/secure_folder_model.dart';
+import '../services/friends_service.dart';
 import '../state/app_state.dart';
 import '../ui/app_theme.dart';
+import 'friends_screen.dart';
 import 'recordings_screen.dart';
 
 class FoldersScreen extends StatelessWidget {
@@ -329,6 +332,28 @@ class _FolderCard extends StatelessWidget {
   }
 
   Future<void> _confirmDelete(BuildContext context, AppState state) async {
+    // Un dossier partage ne se supprime pas : il se quitte.
+    final List<FolderShare> shares;
+    try {
+      shares = await FriendsService.sharesOfMyFolder(folder.id);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Connexion requise pour vérifier si ce dossier est partagé.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    if (shares.isNotEmpty) {
+      await leaveSharedFolderFlow(context, shares.first);
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

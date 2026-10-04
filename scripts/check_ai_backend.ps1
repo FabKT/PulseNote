@@ -1,42 +1,19 @@
 param(
-  [string]$BaseUrl = "http://127.0.0.1:8787",
-
-  [string]$AppClientToken
+  [string]$BaseUrl = "http://127.0.0.1:8787"
 )
 
 $ErrorActionPreference = "Stop"
 
-Set-Location "C:\dev1\audio_recorder_app"
-
-if ([string]::IsNullOrWhiteSpace($AppClientToken)) {
-  $envPath = "C:\dev1\audio_recorder_app\backend\.env"
-  if (!(Test-Path $envPath)) {
-    throw "backend\.env introuvable. Precise -AppClientToken manuellement."
-  }
-
-  $line = Get-Content $envPath |
-    Where-Object { $_ -match "^APP_CLIENT_TOKEN=" } |
-    Select-Object -First 1
-
-  if ([string]::IsNullOrWhiteSpace($line)) {
-    throw "APP_CLIENT_TOKEN introuvable dans backend\.env."
-  }
-
-  $AppClientToken = $line.Substring("APP_CLIENT_TOKEN=".Length).Trim()
-}
-
+# La route /diagnostics/openai a ete retiree (elle consommait l'API OpenAI
+# sans controle d'abonnement). On verifie la sante du service et que les
+# routes IA refusent bien un appel non authentifie.
 Write-Host "Backend: $BaseUrl"
-$health = Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get
-$health | ConvertTo-Json
+Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get | ConvertTo-Json
 
-Write-Host ""
-Write-Host "OpenAI diagnostics:"
-$headers = @{ "x-app-token" = $AppClientToken }
-$diagnostics = Invoke-RestMethod `
-  -Uri "$BaseUrl/diagnostics/openai" `
-  -Method Get `
-  -Headers $headers
-$diagnostics | ConvertTo-Json
-
-Write-Host ""
-Write-Host "Si ok=true apparait deux fois, le token app et la cle OpenAI sont acceptes."
+try {
+  Invoke-RestMethod -Uri "$BaseUrl/summarize" -Method Post `
+    -ContentType "application/json" -Body '{"text":"test"}' | Out-Null
+  throw "/summarize a repondu sans authentification : configuration dangereuse."
+} catch [System.Net.WebException] {
+  Write-Host "OK : /summarize refuse les appels non authentifies."
+}

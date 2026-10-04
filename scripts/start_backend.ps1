@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Set-Location "C:\dev1\audio_recorder_app\backend"
+Set-Location (Join-Path (Split-Path -Parent $PSScriptRoot) "backend")
 
 if (!(Test-Path ".env")) {
   throw "backend\.env est introuvable."
