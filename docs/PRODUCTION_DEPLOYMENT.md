@@ -76,7 +76,16 @@ Play et la suppression de compte sur Render, ajouter ces secrets :
 - `SUPABASE_SERVICE_ROLE_KEY` : cle `service_role` du projet Supabase ;
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` : contenu JSON complet du compte de
   service autorise dans Play Console.
+- `GOOGLE_PUBSUB_PUSH_AUDIENCE` :
+  `https://pulsenote.onrender.com/billing/google-play/rtdn` ;
+- `GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL` : compte de service utilise par
+  la souscription Push Pub/Sub pour signer ses appels OIDC.
 
 Executer aussi `supabase/schema.sql` dans le SQL Editor Supabase afin de creer
 `user_entitlements` et les fonctions atomiques de debit/remboursement des
 credits. Ne jamais integrer ces deux secrets dans l'application mobile.
+
+Le backend reverifie egalement un abonnement actif au maximum toutes les
+15 minutes lorsqu'un utilisateur ouvre l'application. Les notifications RTDN
+permettent en plus de traiter sans attente les renouvellements, retraits et
+remboursements. Voir `docs/google_play_rtdn.md`.

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'api_auth.dart';
@@ -27,6 +28,9 @@ class SummaryService {
       ));
     }
 
+    if (!kDebugMode) {
+      throw Exception('Service de résumé indisponible.');
+    }
     await Future.delayed(const Duration(seconds: 1));
     return '**Résumé IA (simulé)**\n\n'
         'Configurez BACKEND_BASE_URL au build pour utiliser le backend réel.';

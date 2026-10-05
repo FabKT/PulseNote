@@ -10,11 +10,19 @@ import { promisify } from 'node:util';
 import multer from 'multer';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
-import admin from 'firebase-admin';
+import { OAuth2Client } from 'google-auth-library';
 import {
   removeStoragePaths,
   removeStoragePrefix,
 } from './account-cleanup.js';
+import {
+  decodeDeveloperNotification,
+  entitlementPayload,
+  inactiveEntitlementUpdate,
+  isEntitlementActive,
+  shouldRefreshEntitlement,
+  verifiedEntitlementUpdate,
+} from './billing-entitlements.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -41,7 +49,9 @@ const defaultLanguage = process.env.DEFAULT_LANGUAGE || 'fr';
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || 'pulsenote-d2d85';
+const googlePubSubPushAudience = process.env.GOOGLE_PUBSUB_PUSH_AUDIENCE;
+const googlePubSubPushServiceAccountEmail =
+  process.env.GOOGLE_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL;
 const packageName = 'com.fabkt.ultimateaudiorecorder';
 const plusProductId = 'ultimate_audio_recorder_plus_monthly';
 const proProductId = 'ultimate_audio_recorder_pro_monthly';
@@ -73,7 +83,7 @@ const supabaseAdmin =
         auth: { autoRefreshToken: false, persistSession: false },
       })
     : null;
-admin.initializeApp({ projectId: firebaseProjectId });
+const googleOidcClient = new OAuth2Client();
 
 function loadGooglePlayServiceAccount() {
   const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
@@ -143,7 +153,12 @@ async function verifyGoogleSubscription(productId, purchaseToken) {
   });
   const purchase = await response.json();
   if (!response.ok) {
-    throw new Error(purchase?.error?.message || 'Google Play verification failed.');
+    const failure = new Error(
+      purchase?.error?.message || 'Google Play verification failed.',
+    );
+    // 410 : jeton expire depuis longtemps, l'abonnement n'existe plus.
+    if (response.status === 410) failure.inactive = true;
+    throw failure;
   }
 
   const lineItem = purchase.lineItems?.find((item) => item.productId === productId);
@@ -159,7 +174,9 @@ async function verifyGoogleSubscription(productId, purchaseToken) {
     new Date(expiryTime) <= new Date() ||
     !allowedStates.has(purchase.subscriptionState)
   ) {
-    throw new Error('Subscription is not active.');
+    const failure = new Error('Subscription is not active.');
+    failure.inactive = true;
+    throw failure;
   }
 
   if (purchase.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
@@ -182,13 +199,61 @@ async function verifyGoogleSubscription(productId, purchaseToken) {
   return { expiryTime };
 }
 
-function entitlementPayload(row) {
-  return {
-    tier: row?.tier || 'free',
-    creditsRemaining: row?.credits_remaining || 0,
-    creditsResetAt: row?.credits_reset_at || null,
-    subscriptionExpiresAt: row?.subscription_expires_at || null,
-  };
+async function persistVerifiedEntitlement(row, verified) {
+  const update = verifiedEntitlementUpdate(
+    row,
+    verified.expiryTime,
+    monthlyProCredits,
+  );
+  const { data, error } = await supabaseAdmin
+    .from('user_entitlements')
+    .update(update)
+    .eq('user_id', row.user_id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function persistInactiveEntitlement(row) {
+  const { data, error } = await supabaseAdmin
+    .from('user_entitlements')
+    .update(inactiveEntitlementUpdate())
+    .eq('user_id', row.user_id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Revalidation reguliere, y compris pendant la periode payee. Elle ramene un
+// remboursement/retrait au palier Gratuit sous 15 minutes quand l'app appelle
+// /me/entitlements. RTDN appelle la meme fonction immediatement.
+async function refreshEntitlement(
+  row,
+  { force = false, throwOnTransient = false } = {},
+) {
+  if (!force && !shouldRefreshEntitlement(row)) return row;
+  if (
+    !row ||
+    row.tier === 'free' ||
+    !row.purchase_token ||
+    !row.subscription_product_id
+  ) return row;
+  try {
+    const verified = await verifyGoogleSubscription(
+      row.subscription_product_id,
+      row.purchase_token,
+    );
+    return persistVerifiedEntitlement(row, verified);
+  } catch (error) {
+    if (!error?.inactive) {
+      console.error('Subscription refresh failed:', error);
+      if (throwOnTransient) throw error;
+      return row;
+    }
+    return persistInactiveEntitlement(row);
+  }
 }
 
 async function userEntitlement(userId) {
@@ -199,17 +264,12 @@ async function userEntitlement(userId) {
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  return refreshEntitlement(data);
 }
 
 async function requireProEntitlement(userId) {
   const entitlement = await userEntitlement(userId);
-  const expiresAt = entitlement?.subscription_expires_at;
-  if (
-    entitlement?.tier !== 'pro' ||
-    !expiresAt ||
-    new Date(expiresAt) <= new Date()
-  ) {
+  if (entitlement?.tier !== 'pro' || !isEntitlementActive(entitlement)) {
     const error = new Error('Un abonnement Pro actif est requis.');
     error.status = 403;
     throw error;
@@ -322,36 +382,21 @@ const aiRateLimit = rateLimit({
 async function requireAuth(req, res, next) {
   const authorization = req.header('authorization') || '';
   const [, bearerToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
-  if (bearerToken) {
-    // Deux populations de clients partagent ce backend : l'app historique
-    // (Firebase Auth) et Ultimate Audio Recorder (Supabase Auth). On tente
-    // les deux verifications avant de retomber sur le token applicatif.
+  // Seule l'authentification Supabase est acceptee : plus de jeton applicatif
+  // partage (extractible de l'APK) ni de comptes Firebase de l'ancienne app.
+  if (bearerToken && supabase) {
     try {
-      req.user = await admin.auth().verifyIdToken(bearerToken);
-      req.authProvider = 'firebase';
-      return next();
-    } catch (firebaseError) {
-      if (supabase) {
-        try {
-          const { data, error } = await supabase.auth.getUser(bearerToken);
-          if (error || !data?.user) {
-            throw error || new Error('No user for token.');
-          }
-          req.user = data.user;
-          req.authProvider = 'supabase';
-          return next();
-        } catch (supabaseError) {
-          console.warn('Firebase token rejected:', firebaseError?.message || firebaseError);
-          console.warn('Supabase token rejected:', supabaseError?.message || supabaseError);
-        }
-      } else {
-        console.warn('Firebase token rejected:', firebaseError?.message || firebaseError);
+      const { data, error } = await supabase.auth.getUser(bearerToken);
+      if (error || !data?.user) {
+        throw error || new Error('No user for token.');
       }
+      req.user = data.user;
+      req.authProvider = 'supabase';
+      return next();
+    } catch (supabaseError) {
+      console.warn('Supabase token rejected:', supabaseError?.message || supabaseError);
     }
   }
-
-  // Plus de repli sur un jeton applicatif partage : embarque dans l'APK, il
-  // etait extractible et ouvrait les routes OpenAI a n'importe qui.
   return res.status(401).json({ error: 'Unauthorized' });
 }
 
@@ -503,7 +548,7 @@ app.get('/health', (_, res) => {
   res.json({
     ok: true,
     service: 'ultimate-audio-recorder-backend',
-    version: '2026-10-05-account-deletion',
+    version: '2026-10-05-renewals',
   });
 });
 
@@ -517,6 +562,69 @@ app.get('/me/entitlements', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Entitlement lookup failed:', error);
     res.status(500).json({ error: 'Droits utilisateur indisponibles.' });
+  }
+});
+
+async function authenticateGooglePubSub(req) {
+  if (!googlePubSubPushAudience || !googlePubSubPushServiceAccountEmail) {
+    const error = new Error('Google Pub/Sub push authentication is not configured.');
+    error.status = 503;
+    throw error;
+  }
+  const authorization = req.header('authorization') || '';
+  const [, idToken] = authorization.match(/^Bearer\s+(.+)$/i) || [];
+  if (!idToken) {
+    const error = new Error('Missing Google Pub/Sub identity token.');
+    error.status = 401;
+    throw error;
+  }
+  const ticket = await googleOidcClient.verifyIdToken({
+    idToken,
+    audience: googlePubSubPushAudience,
+  });
+  const payload = ticket.getPayload();
+  if (
+    payload?.email !== googlePubSubPushServiceAccountEmail ||
+    payload?.email_verified !== true
+  ) {
+    const error = new Error('Unexpected Google Pub/Sub service account.');
+    error.status = 401;
+    throw error;
+  }
+}
+
+// Endpoint Push Pub/Sub pour les Real-time developer notifications Google
+// Play. Le jeton OIDC signe par Google empeche un tiers de modifier les droits.
+app.post('/billing/google-play/rtdn', async (req, res) => {
+  try {
+    await authenticateGooglePubSub(req);
+    if (!supabaseAdmin) {
+      return res.status(503).json({ error: 'Facturation serveur non configuree.' });
+    }
+    const notification = decodeDeveloperNotification(req.body?.message?.data);
+    if (!notification) return res.status(204).end();
+
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(notification.purchaseToken)
+      .digest('hex');
+    const { data: entitlement, error } = await supabaseAdmin
+      .from('user_entitlements')
+      .select('*')
+      .eq('purchase_token_hash', tokenHash)
+      .maybeSingle();
+    if (error) throw error;
+    if (!entitlement) return res.status(204).end();
+
+    await refreshEntitlement(entitlement, {
+      force: true,
+      throwOnTransient: true,
+    });
+    return res.status(204).end();
+  } catch (error) {
+    const status = Number(error?.status) || 500;
+    console.error('Google Play RTDN processing failed:', error);
+    return res.status(status).json({ error: 'Notification Google Play refusee.' });
   }
 });
 
@@ -547,7 +655,9 @@ app.post('/billing/verify', requireAuth, async (req, res) => {
       tier,
       subscription_product_id: productId,
       purchase_token_hash: crypto.createHash('sha256').update(purchaseToken).digest('hex'),
+      purchase_token: purchaseToken,
       subscription_expires_at: verified.expiryTime,
+      subscription_last_verified_at: new Date().toISOString(),
       credits_remaining:
         tier === 'pro'
           ? isNewProPeriod

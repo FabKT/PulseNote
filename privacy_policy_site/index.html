@@ -539,6 +539,8 @@
             <li><a href="#partage">Partage</a></li>
             <li><a href="#securite">Sécurité</a></li>
             <li><a href="#suppression">Suppression</a></li>
+            <li><a href="#bases-legales">Bases légales</a></li>
+            <li><a href="#droits">Vos droits</a></li>
             <li><a href="#mineurs">Mineurs</a></li>
             <li><a href="#modifications">Modifications</a></li>
             <li><a href="#contact">Contact</a></li>
@@ -584,7 +586,9 @@
               </li>
               <li>
                 des informations techniques nécessaires au fonctionnement du
-                service.
+                service, notamment la version de l'application, le modèle de
+                l'appareil, la version d'Android, les journaux de plantage, les
+                traces d'erreur et un identifiant technique d'installation.
               </li>
             </ul>
           </section>
@@ -688,6 +692,10 @@
                 maintenir la sécurité et le bon fonctionnement technique du
                 service.
               </li>
+              <li>
+                détecter, diagnostiquer et corriger les plantages et erreurs de
+                l'application.
+              </li>
             </ul>
           </section>
 
@@ -715,7 +723,11 @@
               l'application, notamment Supabase pour l'authentification et la
               sauvegarde cloud, le backend applicatif pour la
               transcription/résumé, OpenAI pour les traitements IA, et Google
-              Play Billing pour la gestion des abonnements.
+              Play Billing pour la gestion des abonnements. Firebase
+              Crashlytics, fourni par Google, reçoit les données techniques de
+              diagnostic nécessaires à l'analyse des plantages. L'application
+              ne transmet pas à Crashlytics le contenu des enregistrements, des
+              messages, des transcriptions ou des résumés.
             </p>
             <p>
               L'application n'intègre actuellement aucun réseau publicitaire et
@@ -751,8 +763,8 @@
               La suppression du compte efface le profil, les relations et
               demandes d'amis, les conversations, les messages audio, les
               dossiers, les planifications, les enregistrements cloud,
-              transcriptions et résumés appartenant au compte. Tous les objets
-              de stockage associés sont traités, sans limite de 1 000 fichiers.
+              transcriptions et résumés appartenant au compte, ainsi que tous
+              les fichiers associés dans l'espace de stockage cloud.
             </p>
             <p>
               Pour respecter l'effacement, les enregistrements appartenant au
@@ -764,8 +776,69 @@
             </p>
           </section>
 
+          <section id="bases-legales">
+            <h2>11. Bases légales, conservation et transferts</h2>
+            <p>
+              Les traitements nécessaires au compte, à l'enregistrement, à la
+              sauvegarde cloud, aux fonctions IA, à la fonction Amis et à
+              l'abonnement reposent sur l'exécution du contrat conclu avec
+              l'utilisateur lorsqu'il utilise l'application. La sécurité du
+              service et la prévention des abus (limitation du nombre de
+              requêtes, vérification des achats) reposent sur l'intérêt
+              légitime de l'éditeur. L'accès au micro et aux notifications
+              est soumis à l'autorisation donnée par l'utilisateur dans
+              Android, qu'il peut retirer à tout moment dans les réglages du
+              téléphone.
+            </p>
+            <ul>
+              <li>
+                <strong>Données du compte et contenus sauvegardés</strong> :
+                conservés tant que le compte existe, jusqu'à leur suppression
+                par l'utilisateur ou la suppression du compte.
+              </li>
+              <li>
+                <strong>Fichiers envoyés pour transcription</strong> :
+                supprimés du backend dès la fin du traitement. OpenAI peut
+                les conserver pour une durée limitée afin de prévenir les
+                abus, selon les conditions de son API ; ils ne sont pas
+                utilisés pour entraîner ses modèles.
+              </li>
+              <li>
+                <strong>Statut d'abonnement</strong> : conservé tant que le
+                compte existe, pour vérifier les droits et les crédits IA.
+              </li>
+            </ul>
+            <p>
+              Certains prestataires, notamment OpenAI et, selon la région
+              d'hébergement, Supabase, peuvent traiter des données en dehors
+              de l'Union européenne, en particulier aux États-Unis. Ces
+              transferts sont encadrés par les garanties prévues par le RGPD,
+              comme les clauses contractuelles types de la Commission
+              européenne.
+            </p>
+          </section>
+
+          <section id="droits">
+            <h2>12. Vos droits</h2>
+            <p>
+              Conformément au RGPD, l'utilisateur dispose d'un droit d'accès,
+              de rectification, d'effacement, de limitation, de portabilité
+              et d'opposition sur ses données. Il peut exercer ces droits en
+              écrivant à
+              <a href="mailto:tayoufabiokamogne@gmail.com"
+                >tayoufabiokamogne@gmail.com</a
+              >. Une réponse est apportée dans un délai d'un mois.
+            </p>
+            <p>
+              S'il estime que ses droits ne sont pas respectés, l'utilisateur
+              peut introduire une réclamation auprès de la CNIL
+              (<a href="https://www.cnil.fr">www.cnil.fr</a>) ou de l'autorité
+              de protection des données de son pays de résidence.
+            </p>
+          </section>
+
           <section id="mineurs">
-            <h2>11. Mineurs</h2>
+            <h2>13. Mineurs</h2>
             <p>
               Ultimate Audio Recorder n'est pas destinée spécifiquement aux
               enfants. Si un parent ou responsable légal estime qu'un mineur a
@@ -775,7 +848,7 @@
           </section>
 
           <section id="modifications">
-            <h2>12. Modifications</h2>
+            <h2>14. Modifications</h2>
             <p>
               Cette politique peut être mise à jour pour refléter les évolutions
               de l'application, du backend ou des obligations légales. La date de
@@ -784,7 +857,7 @@
           </section>
 
           <section id="contact">
-            <h2>13. Contact</h2>
+            <h2>15. Contact</h2>
             <p>
               Pour toute question concernant la confidentialité ou la suppression
               de données, contactez l'éditeur à l'adresse

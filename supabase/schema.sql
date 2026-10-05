@@ -81,11 +81,33 @@ alter table public.folders enable row level security;
 alter table public.keywords enable row level security;
 alter table public.schedules enable row level security;
 alter table public.audio_playback_schedules enable row level security;
+-- Jeton Google Play de l'abonnement en cours : le backend le reverifie quand
+-- la periode payee est echue, pour prendre en compte renouvellements et
+-- resiliations sans attendre que l'app renvoie l'achat.
+alter table public.user_entitlements add column if not exists purchase_token text;
+alter table public.user_entitlements
+  add column if not exists subscription_last_verified_at timestamptz;
+
 alter table public.user_entitlements enable row level security;
 
 drop policy if exists "owner_read_entitlement" on public.user_entitlements;
 create policy "owner_read_entitlement" on public.user_entitlements
   for select using (auth.uid() = user_id);
+
+-- Le jeton d'achat doit rester strictement cote serveur. Une politique RLS
+-- limite les lignes, pas les colonnes : on retire donc la lecture globale et
+-- on ne rend accessibles au client que les champs non sensibles.
+revoke all on public.user_entitlements from anon;
+revoke select on public.user_entitlements from authenticated;
+grant select (
+  user_id,
+  tier,
+  subscription_product_id,
+  subscription_expires_at,
+  credits_remaining,
+  credits_reset_at,
+  updated_at
+) on public.user_entitlements to authenticated;
 
 create or replace function public.consume_ai_credits(
   p_user_id uuid,

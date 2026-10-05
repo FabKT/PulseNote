@@ -343,6 +343,7 @@ class SyncService {
       };
 
   Future<void> _enqueue(_SyncJob job) async {
+    job.ownerId ??= _userId;
     final jobs = await _loadQueue();
     jobs.removeWhere((j) => j.table == job.table && j.recordId == job.recordId);
     jobs.add(job);
@@ -371,6 +372,9 @@ class SyncService {
     final client = _client;
     final userId = _userId;
     if (client == null || userId == null) return false;
+    // Tache creee sous un autre compte (deconnexion puis connexion d'une
+    // autre personne) : ne jamais l'envoyer dans le cloud du compte actuel.
+    if (job.ownerId != null && job.ownerId != userId) return true;
     try {
       if (job.isDelete) {
         if (job.storageBucket != null && job.storageObjectPath != null) {
@@ -441,6 +445,8 @@ class _SyncJob {
   final String? localFilePath;
   final String? storageBucket;
   final String? storageObjectPath;
+  // Compte connecte au moment ou la tache a ete creee.
+  String? ownerId;
 
   _SyncJob({
     required this.table,
@@ -450,6 +456,7 @@ class _SyncJob {
     this.localFilePath,
     this.storageBucket,
     this.storageObjectPath,
+    this.ownerId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -460,6 +467,7 @@ class _SyncJob {
         'localFilePath': localFilePath,
         'storageBucket': storageBucket,
         'storageObjectPath': storageObjectPath,
+        'ownerId': ownerId,
       };
 
   factory _SyncJob.fromJson(Map<String, dynamic> json) => _SyncJob(
@@ -470,5 +478,6 @@ class _SyncJob {
         localFilePath: json['localFilePath'] as String?,
         storageBucket: json['storageBucket'] as String?,
         storageObjectPath: json['storageObjectPath'] as String?,
+        ownerId: json['ownerId'] as String?,
       );
 }

@@ -18,7 +18,9 @@ class AccountService {
           Uri.parse('${ApiConfig.backendBaseUrl}/account'),
           headers: await ApiAuth.headers(),
         )
-        .timeout(const Duration(seconds: 45));
+        // Reveil du serveur (Render) + suppression de tous les fichiers :
+        // 45 s ne suffisaient pas pour un compte bien rempli.
+        .timeout(const Duration(minutes: 3));
 
     if (response.statusCode >= 200 && response.statusCode < 300) return;
 

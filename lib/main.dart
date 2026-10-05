@@ -1,5 +1,8 @@
 import 'dart:ui' as ui;
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'config/supabase_config.dart';
@@ -15,6 +18,7 @@ import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _initializeCrashReporting();
   _installErrorHandling();
   if (SupabaseConfig.isConfigured) {
     await AuthService.initializeSupabase();
@@ -32,16 +36,42 @@ void main() async {
   );
 }
 
-void _installErrorHandling() {
-  FlutterError.onError = FlutterError.presentError;
-  ui.PlatformDispatcher.instance.onError = (error, stack) {
-    FlutterError.reportError(
-      FlutterErrorDetails(
-        exception: error,
-        stack: stack,
-        library: 'Ultimate Audio Recorder',
-      ),
+bool _crashlyticsReady = false;
+
+Future<void> _initializeCrashReporting() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+  try {
+    await Firebase.initializeApp();
+    const enabled = bool.fromEnvironment(
+      'CRASHLYTICS_ENABLED',
+      defaultValue: kReleaseMode,
     );
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(enabled);
+    _crashlyticsReady = enabled;
+  } catch (error, stack) {
+    debugPrint('Crashlytics initialization failed: $error\n$stack');
+  }
+}
+
+void _installErrorHandling() {
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    if (_crashlyticsReady) {
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+    }
+  };
+  ui.PlatformDispatcher.instance.onError = (error, stack) {
+    if (_crashlyticsReady) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    } else {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Ultimate Audio Recorder',
+        ),
+      );
+    }
     return true;
   };
   ErrorWidget.builder = (_) => const Directionality(

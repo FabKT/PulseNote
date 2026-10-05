@@ -30,7 +30,17 @@ class AuthService {
   }
 
   static Future<String?> idToken() async {
-    return _client.auth.currentSession?.accessToken;
+    var session = _client.auth.currentSession;
+    // Au retour d'arriere-plan, le rafraichissement automatique peut ne pas
+    // encore avoir tourne : un jeton echu serait refuse par le backend.
+    if (session != null && session.isExpired) {
+      try {
+        session = (await _client.auth.refreshSession()).session;
+      } catch (_) {
+        return null;
+      }
+    }
+    return session?.accessToken;
   }
 
   static Future<AuthResponse> signInWithEmail({
@@ -43,6 +53,14 @@ class AuthService {
     );
   }
 
+  // Lien qui rouvre l'app depuis un email Supabase (confirmation
+  // d'inscription, reinitialisation du mot de passe). supabase_flutter le
+  // traite seul (detectSessionInUri). A declarer dans Supabase >
+  // Authentication > URL Configuration > Redirect URLs, et dans le filtre
+  // d'intent de AndroidManifest.xml.
+  static const String authCallbackUrl =
+      'com.fabkt.ultimateaudiorecorder://login-callback/';
+
   static Future<AuthResponse> createAccountWithEmail({
     required String email,
     required String password,
@@ -50,7 +68,19 @@ class AuthService {
     return _client.auth.signUp(
       email: email.trim(),
       password: password,
+      emailRedirectTo: authCallbackUrl,
     );
+  }
+
+  static Future<void> sendPasswordReset(String email) {
+    return _client.auth.resetPasswordForEmail(
+      email.trim(),
+      redirectTo: authCallbackUrl,
+    );
+  }
+
+  static Future<void> updatePassword(String password) async {
+    await _client.auth.updateUser(UserAttributes(password: password));
   }
 
   static Future<AuthResponse> signInWithGoogle() async {

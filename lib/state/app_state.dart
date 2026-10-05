@@ -7,8 +7,10 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthState;
 import 'package:uuid/uuid.dart';
 import '../config/billing_config.dart';
+import '../config/supabase_config.dart';
 import '../models/audio_playback_schedule_model.dart';
 import '../models/keyword_model.dart';
 import '../models/recording_model.dart';
@@ -16,6 +18,7 @@ import '../models/schedule_model.dart';
 import '../models/secure_folder_model.dart';
 import '../models/subscription_tier.dart';
 import '../services/audio_service.dart';
+import '../services/auth_service.dart';
 import '../services/foreground_service.dart';
 import '../services/entitlement_service.dart';
 import '../services/keyword_detection_service.dart';
@@ -56,6 +59,12 @@ class AppState extends ChangeNotifier {
   final MediaExportService _mediaExport = MediaExportService();
   final PurchaseService _purchase = PurchaseService();
   late final SyncService _sync;
+  StreamSubscription<AuthState>? _authSub;
+  // Compte dont les donnees locales sont chargees, et file qui serialise les
+  // changements de compte (evite deux recuperations distantes simultanees).
+  String? _activeUserId;
+  Future<void> _authQueue = Future.value();
+  static const String _localDataOwnerKey = 'local_data_owner_v1';
   final AudioPlayer _scheduledAudioPlayer = AudioPlayer();
   Timer? _scheduleTimer;
   Timer? _amplitudeTimer;
@@ -134,7 +143,46 @@ class AppState extends ChangeNotifier {
     _startLocalTimer();
     notifyListeners();
     await _sync.init();
+    _listenToAuth();
+  }
+
+  // Les droits et les donnees cloud dependent du compte connecte : on les
+  // charge a chaque connexion, pas seulement au lancement (sinon une
+  // premiere connexion n'affiche rien avant un redemarrage).
+  void _listenToAuth() {
+    if (!SupabaseConfig.isConfigured) return;
+    _queueUserActivation(AuthService.currentUser?.id);
+    _authSub = AuthService.authStateChanges.listen(
+      (authState) => _queueUserActivation(authState.session?.user.id),
+    );
+  }
+
+  void _queueUserActivation(String? userId) {
+    _authQueue = _authQueue
+        .then((_) => _activateUser(userId))
+        .catchError((Object _) {});
+  }
+
+  Future<void> _activateUser(String? userId) async {
+    if (userId == null) {
+      _activeUserId = null;
+      return;
+    }
+    if (userId == _activeUserId) return;
+    _activeUserId = userId;
+
+    // Les donnees locales d'une autre personne (deconnexion puis connexion
+    // d'un autre compte sur ce telephone) ne doivent ni lui etre montrees ni
+    // etre envoyees dans son cloud.
+    final p = await SharedPreferences.getInstance();
+    final owner = p.getString(_localDataOwnerKey);
+    if (owner != null && owner != userId) {
+      await clearLocalAccountData();
+    }
+    await p.setString(_localDataOwnerKey, userId);
+
     await refreshEntitlement();
+    unawaited(_sync.flushQueue());
     await _pullRemoteData();
   }
 
@@ -780,6 +828,12 @@ class AppState extends ChangeNotifier {
     unawaited(_sync.upsertRecording(rec));
   }
 
+  // Audios deja en file d'envoi (pas encore confirmes dans le cloud) : ils
+  // occuperont bientot du quota, on les compte pour ne pas le depasser.
+  int _pendingUploadBytes() => _recordings
+      .where((r) => !r.cloudSynced && r.overQuotaDeadline == null)
+      .fold(0, (sum, r) => sum + (r.sizeBytes ?? 0));
+
   void _onRecordingUploaded(String recordingId) {
     final i = _recordings.indexWhere((r) => r.id == recordingId);
     if (i == -1) return;
@@ -803,6 +857,26 @@ class AppState extends ChangeNotifier {
   // par défaut) hors quota est dépassé sans avoir été exportés ni
   // synchronisés (voir _applyQuotaAndSync).
   Future<void> _checkOverQuotaExpirations() async {
+    // Si de la place a ete liberee dans le cloud (ou si l'utilisateur est
+    // passe a un palier payant), on sauvegarde les audios en attente plutot
+    // que de les supprimer : la suppression ne vaut que si le quota n'a pas
+    // ete libere.
+    final pending = _recordings
+        .where((r) => r.overQuotaDeadline != null)
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    var rescued = false;
+    for (final rec in pending) {
+      final fits = _tier != SubscriptionTier.free ||
+          cloudUsedBytes + _pendingUploadBytes() + (rec.sizeBytes ?? 0) <=
+              freeStorageQuotaBytes;
+      if (!fits) break;
+      rec.overQuotaDeadline = null;
+      rescued = true;
+      unawaited(_sync.upsertRecording(rec));
+    }
+    if (rescued) await _saveRecordings();
+
     final now = DateTime.now();
     final expired = _recordings
         .where((r) =>
@@ -1093,13 +1167,15 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadAll() async {
     final p = await SharedPreferences.getInstance();
-    final legacyPremium = p.getBool(BillingConfig.legacyDevEntitlementKey);
+    // L'ancienne cle de test (is_premium_dev) ne debloque plus rien : seul le
+    // palier confirme par le serveur fait foi.
+    await p.remove(BillingConfig.legacyDevEntitlementKey);
     final storedTierIndex = p.getInt(BillingConfig.subscriptionTierKey);
-    _tier = storedTierIndex != null
+    _tier = storedTierIndex != null &&
+            storedTierIndex >= 0 &&
+            storedTierIndex < SubscriptionTier.values.length
         ? SubscriptionTier.values[storedTierIndex]
-        : (legacyPremium == true
-            ? SubscriptionTier.pro
-            : SubscriptionTier.free);
+        : SubscriptionTier.free;
 
     final kj = p.getString('keywords_v2');
     if (kj != null) {
@@ -1138,6 +1214,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     FlutterForegroundTask.removeTaskDataCallback(_onForegroundTick);
     _stopLocalTimer();
     _stopAmplitudeSampling();

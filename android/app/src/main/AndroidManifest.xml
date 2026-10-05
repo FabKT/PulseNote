@@ -28,8 +28,6 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <!-- Démarrage auto si nécessaire (optionnel) -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="Ultimate Audio Recorder"
@@ -50,6 +48,16 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Liens des emails Supabase (confirmation, mot de passe oublié) :
+                 voir AuthService.authCallbackUrl. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.fabkt.ultimateaudiorecorder"
+                    android:host="login-callback" />
             </intent-filter>
         </activity>
 

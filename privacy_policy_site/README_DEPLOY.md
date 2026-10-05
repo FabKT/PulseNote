@@ -1,50 +1,52 @@
-# Déploiement de la politique de confidentialité
+# Déploiement Netlify
 
-Site statique complet requis par Google Play Console.
+Ce dossier est un site statique autonome. Il ne nécessite ni commande de
+construction, ni dépendance, ni variable d'environnement, ni token d'accès.
 
-**URL actuellement en ligne :** https://zippy-pithivier-16e4a6.netlify.app/
+## Mettre à jour le site existant
 
-## Déploiement par glisser-déposer
+1. Connectez-vous au compte Netlify qui possède le site
+   `zippy-pithivier-16e4a6`.
+2. Ouvrez le projet, puis **Deploys**.
+3. Glissez le dossier `privacy_policy_site` complet dans la zone de déploiement
+   manuel. Vous pouvez aussi y déposer l'archive
+   `Ultimate_Audio_Recorder_Netlify.zip` sans la décompresser.
+4. Attendez l'état **Published**.
+5. Vérifiez les URL ci-dessous dans une fenêtre privée.
 
-1. Ouvrir https://app.netlify.com/drop
-2. Glisser le dossier `privacy_policy_site` dans la zone de dépôt.
-3. Attendre la fin du déploiement.
-4. Vérifier les trois URL indiquées ci-dessous.
-5. Conserver le même site Netlify afin que les URL déclarées dans l'app et
-   Play Console ne changent pas.
+Ne créez pas un nouveau projet Netlify : cela changerait l'URL déjà déclarée
+dans l'application et dans Google Play Console.
 
 ## URL à vérifier
 
 - Politique : `https://zippy-pithivier-16e4a6.netlify.app/`
 - Conditions : `https://zippy-pithivier-16e4a6.netlify.app/conditions.html`
 - Suppression : `https://zippy-pithivier-16e4a6.netlify.app/suppression-compte.html`
+- Alias de suppression : `https://zippy-pithivier-16e4a6.netlify.app/delete-account`
 
-## Fichiers
+## Contenu du dossier
 
 - `index.html` : politique de confidentialité.
-- `conditions.html` : conditions d'utilisation et formules commerciales.
-- `suppression-compte.html` : procédure publique de suppression de compte.
-- Le CSS est intégré dans chaque page
-  (balise `<style>`), il n'y a volontairement plus de `styles.css` séparé.
-  Un premier déploiement n'avait envoyé que `index.html`, laissant le site
-  sans aucun style (`styles.css` renvoyait 404) : tout intégrer rend la page
-  impossible à casser, même si un seul fichier est transféré.
-- `netlify.toml` : en-têtes de sécurité et redirections courtes.
+- `conditions.html` : conditions d'utilisation.
+- `suppression-compte.html` : instructions publiques de suppression de compte.
+- `404.html` : page d'erreur.
+- `_headers` et `netlify.toml` : en-têtes de sécurité et de cache.
+- `_redirects` et `netlify.toml` : alias d'URL stables.
 
-## À vérifier avant chaque publication Play Store
+Le CSS est inclus dans chaque page HTML. Le déploiement ne dépend donc d'aucun
+fichier CSS externe.
 
-- Le nom de l'application sur la page doit correspondre exactement à celui de
-  la fiche Play Store (**Ultimate Audio Recorder**) : Google contrôle cette
-  cohérence.
-- Les prestataires cités (Supabase, OpenAI, Google Play Billing) doivent
-  correspondre à ceux réellement utilisés par l'application et au formulaire
-  « Sécurité des données » de Play Console.
-- La date de dernière mise à jour en haut de page doit être actualisée.
+## Réglages Netlify
 
-## Contact
+Si Netlify demande des réglages lors d'un déploiement manuel :
 
-La page indique l'adresse de contact suivante:
+- Build command : laisser vide.
+- Publish directory : `/` ou laisser vide.
+- Functions directory : laisser vide.
 
-```text
-tayoufabiokamogne@gmail.com
-```
+## Contrôles Google Play
+
+- Nom de l'application : **Ultimate Audio Recorder**.
+- Contact : `tayoufabiokamogne@gmail.com`.
+- La fiche Play Console doit indiquer **Ne contient pas d'annonces**.
+- L'URL de suppression de compte doit pointer vers la page publique ci-dessus.

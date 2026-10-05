@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -24,6 +25,11 @@ class TranscriptionService {
       return _transcribeWithRetry(filePath);
     }
 
+    // Le mode simule ne sert qu'au developpement : un build publie sans
+    // backend doit echouer clairement, pas afficher un faux texte.
+    if (!kDebugMode) {
+      throw Exception('Service de transcription indisponible.');
+    }
     await Future.delayed(const Duration(seconds: 2));
     final fileName = filePath.split(RegExp(r'[/\\]')).last;
     return '[ Transcription simulée ]\n\n'

@@ -52,6 +52,15 @@ Déclarer au minimum, selon les fonctionnalités effectivement activées :
 - informations d'achat et statut d'abonnement : gestion des abonnements ;
 - activité dans l'application : demandes d'amis, messages et dossiers partagés ;
 - contenu utilisateur : messages texte, messages audio et fichiers partagés.
+- diagnostics : journaux de plantage, traces d'erreur, version de l'application,
+  modèle d'appareil, version d'Android et identifiant technique d'installation,
+  collectés par Firebase Crashlytics pour la stabilité de l'application ;
+
+Crashlytics ne reçoit pas les fichiers audio, messages, transcriptions ou
+résumés. Dans le formulaire, déclarer les diagnostics comme collectés, non
+vendus, utilisés pour les fonctionnalités et l'analyse de stabilité. Vérifier
+la qualification « éphémère » et les options de suppression selon les réponses
+proposées par la version actuelle du formulaire Play Console.
 
 Les données sont chiffrées en transit. L'utilisateur peut demander leur
 suppression dans l'application et sur le site public.
@@ -113,7 +122,11 @@ inscrits avec le même compte Google pendant toute la période.
 ## Ordre de mise en production
 
 1. Déployer le dossier Netlify et vérifier les trois URL légales.
-2. Exécuter `supabase/schema.sql` dans Supabase SQL Editor.
+2. Exécuter `supabase/schema.sql` dans Supabase SQL Editor, puis dans
+   Authentication > URL Configuration :
+   - Site URL : `https://zippy-pithivier-16e4a6.netlify.app/` ;
+   - Redirect URLs : ajouter `com.fabkt.ultimateaudiorecorder://login-callback/`
+     (confirmation d'inscription et « Mot de passe oublié » rouvrent l'app).
 3. Ajouter `SUPABASE_SERVICE_ROLE_KEY` sur Render.
 4. Créer le compte de service Play, puis ajouter son JSON dans le secret Render
    `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`.
@@ -121,7 +134,8 @@ inscrits avec le même compte Google pendant toute la période.
    de compte et une transcription avec crédits.
 6. Créer et activer les abonnements 2,99 € et 9,99 € dans Play Console.
 7. Déclarer « Ne contient pas d'annonces » dans Play Console.
-8. Incrémenter la version, reconstruire et téléverser l'AAB.
+8. Reconstruire et téléverser l'AAB (version `1.0.0+1` pour le premier envoi ;
+   incrémenter `version:` dans pubspec.yaml et `LegalConfig.appVersion` ensuite).
 9. Compléter les formulaires, déclarations microphone/service de premier plan,
    captures d'écran et accès de démonstration.
 10. Lancer le test fermé de 14 jours, puis demander l'accès production.
