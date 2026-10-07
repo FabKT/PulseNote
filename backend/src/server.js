@@ -1549,7 +1549,16 @@ function buildMangaDiagnostics(input, taskType, finalPrompt) {
   };
 }
 
-async function requestMangaImageGeneration(finalPrompt, requestedImageSize = imageSize) {
+// Fond transparent (gpt-image-2, preview depuis 2026-08) : PNG avec canal alpha.
+function transparentBackgroundFields(background) {
+  return background === 'transparent' ? { background: 'transparent', output_format: 'png' } : {};
+}
+
+async function requestMangaImageGeneration(
+  finalPrompt,
+  requestedImageSize = imageSize,
+  background = null,
+) {
   const size = normalizeMangaImageSize(requestedImageSize, imageSize);
   const boundedPrompt = fitOpenAIImagePrompt(finalPrompt);
   const payload = await requestOpenAIImagePayload(
@@ -1567,6 +1576,7 @@ async function requestMangaImageGeneration(finalPrompt, requestedImageSize = ima
           size,
           quality: imageQuality,
           output_format: imageFormat,
+          ...transparentBackgroundFields(background),
         }),
       },
     }),
@@ -1577,7 +1587,12 @@ async function requestMangaImageGeneration(finalPrompt, requestedImageSize = ima
   return extractImageDataUrl(payload);
 }
 
-async function requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSize = imageSize) {
+async function requestMangaImageEdit(
+  finalPrompt,
+  imageInputs,
+  requestedImageSize = imageSize,
+  background = null,
+) {
   const size = normalizeMangaImageSize(requestedImageSize, imageSize);
   const boundedPrompt = fitOpenAIImagePrompt(finalPrompt);
   const payload = await requestOpenAIImagePayload(
@@ -1587,7 +1602,9 @@ async function requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSiz
       form.append('prompt', boundedPrompt);
       form.append('size', size);
       form.append('quality', imageQuality);
-      form.append('output_format', imageFormat);
+      const transparent = transparentBackgroundFields(background);
+      form.append('output_format', transparent.output_format || imageFormat);
+      if (transparent.background) form.append('background', transparent.background);
 
       for (const image of imageInputs) {
         form.append('image[]', image.blob, image.filename);
@@ -1615,9 +1632,9 @@ async function requestMangaImage(finalPrompt, input, taskType) {
   const requestedImageSize = normalizeMangaImageSize(input.size, imageSize);
   const imageInputs = buildMangaImageInputs(input, taskType);
   if (imageInputs.length > 0) {
-    return requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSize);
+    return requestMangaImageEdit(finalPrompt, imageInputs, requestedImageSize, input.background);
   }
-  return requestMangaImageGeneration(finalPrompt, requestedImageSize);
+  return requestMangaImageGeneration(finalPrompt, requestedImageSize, input.background);
 }
 
 function normalizeCharacterCardReferences(references) {
@@ -3887,6 +3904,7 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     referenceCopyGuard: false,
     flatMangaStyleGuard: false,
     generationEndpoint: '/api/manga/generate-page',
+    transparentBackground: true,
     characterGenerationEndpoint: '/api/character/generate',
     sketchFinalGenerationEndpoint: '/api/sketch-final/generate',
     characterCardStyles: ['realistic', 'retro90', 'classic', 'current'],
@@ -4131,6 +4149,7 @@ app.post('/api/manga/generate-page', requireAuth, async (req, res) => {
     aspectRatio: normalizeMangaAspectRatio(req.body?.aspectRatio, requestedImageSize),
     size: requestedImageSize,
     existingImageDataUrl: cleanText(req.body?.existingImageDataUrl),
+    background: req.body?.background === 'transparent' ? 'transparent' : null,
   };
 
   try {
