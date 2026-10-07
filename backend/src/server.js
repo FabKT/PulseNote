@@ -3886,6 +3886,87 @@ app.get('/health', (_, res) => {
   res.json({ ok: true, service: 'ultimate-audio-recorder-backend' });
 });
 
+// ---------------------------------------------------------------------------
+// Texte (GPT) pour CollabManga : écriture des scènes, chapitres et cartes du
+// visual novel. Le client n'a pas de clé OpenAI : il passe par ce backend.
+// ---------------------------------------------------------------------------
+const textModel = process.env.TEXT_MODEL || 'gpt-4.1-mini';
+const textTimeoutMs = Number(process.env.TEXT_TIMEOUT_MS || 240000);
+const allowedTextModel = /^(gpt|o\d|chatgpt)[\w.-]*$/i;
+
+app.get('/api/text/models', requireAuth, async (_, res) => {
+  if (!openaiApiKey) return res.status(503).json({ error: 'OPENAI_API_KEY is not configured.' });
+  try {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      headers: { Authorization: `Bearer ${openaiApiKey}` },
+      signal: AbortSignal.timeout(30000),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json({ error: payload?.error?.message || 'OpenAI models failed.' });
+    }
+    const models = (payload.data || [])
+      .map((model) => model.id)
+      .filter((id) => allowedTextModel.test(id))
+      .sort();
+    res.json({ defaultModel: textModel, models });
+  } catch (error) {
+    res.status(502).json({ error: errorText(error) });
+  }
+});
+
+app.post('/api/text/complete', requireAuth, async (req, res) => {
+  if (!openaiApiKey) return res.status(503).json({ error: 'OPENAI_API_KEY is not configured.' });
+  const requested = cleanText(req.body?.model);
+  const model = requested && allowedTextModel.test(requested) ? requested : textModel;
+  const system = cleanText(req.body?.system);
+  const parts = Array.isArray(req.body?.content) ? req.body.content : [];
+  const content = parts
+    .map((part) => {
+      if (part?.type === 'text' && typeof part.text === 'string') {
+        return { type: 'input_text', text: part.text };
+      }
+      const url = part?.type === 'image_url' ? part.image_url?.url : null;
+      if (typeof url === 'string' && url) return { type: 'input_image', image_url: url };
+      return null;
+    })
+    .filter(Boolean);
+  if (!content.length) return res.status(400).json({ error: 'Missing text content.' });
+
+  const maxOutputTokens = Math.min(Math.max(Number(req.body?.maxOutputTokens) || 12000, 256), 32000);
+  const body = {
+    model,
+    input: [
+      ...(system ? [{ role: 'system', content: system }] : []),
+      { role: 'user', content },
+    ],
+    max_output_tokens: maxOutputTokens,
+    ...(req.body?.json ? { text: { format: { type: 'json_object' } } } : {}),
+  };
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(textTimeoutMs),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: payload?.error?.message || `OpenAI text request failed (${response.status}).`,
+        code: payload?.error?.code || null,
+      });
+    }
+    res.json({ text: extractResponseOutputText(payload), model: payload.model || model, usage: payload.usage || null });
+  } catch (error) {
+    res.status(502).json({ error: errorText(error) });
+  }
+});
+
 app.get('/api/manga/status', requireAuth, (_, res) => {
   res.json({
     ok: true,
@@ -3905,6 +3986,7 @@ app.get('/api/manga/status', requireAuth, (_, res) => {
     flatMangaStyleGuard: false,
     generationEndpoint: '/api/manga/generate-page',
     transparentBackground: true,
+    textEndpoint: '/api/text/complete',
     characterGenerationEndpoint: '/api/character/generate',
     sketchFinalGenerationEndpoint: '/api/sketch-final/generate',
     characterCardStyles: ['realistic', 'retro90', 'classic', 'current'],
