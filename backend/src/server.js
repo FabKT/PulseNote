@@ -3950,23 +3950,48 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
     ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     ...(req.body?.json ? { text: { format: { type: 'json_object' } } } : {}),
   };
+  // Réflexion poussée ou longue réponse : plusieurs minutes avant le premier octet, au-delà
+  // du délai d'attente des en-têtes de Node (5 min, « fetch failed »). La tâche est alors
+  // lancée en arrière-plan chez OpenAI puis suivie par de courtes requêtes.
+  const background = Boolean(reasoningEffort) || maxOutputTokens > 32000;
+  const openaiHeaders = { Authorization: `Bearer ${openaiApiKey}`, 'Content-Type': 'application/json' };
 
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(textTimeoutMs),
+      headers: openaiHeaders,
+      body: JSON.stringify(background ? { ...body, background: true, store: true } : body),
+      signal: AbortSignal.timeout(background ? 60000 : textTimeoutMs),
     });
-    const payload = await response.json().catch(() => ({}));
+    let payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       return res.status(response.status).json({
         error: payload?.error?.message || `OpenAI text request failed (${response.status}).`,
         code: payload?.error?.code || null,
       });
+    }
+    if (background) {
+      const deadline = Date.now() + textTimeoutMs;
+      while (['queued', 'in_progress'].includes(payload?.status)) {
+        if (Date.now() > deadline) {
+          return res.status(504).json({ error: `OpenAI text request still running after ${Math.round(textTimeoutMs / 60000)} min.` });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const poll = await fetch(`https://api.openai.com/v1/responses/${payload.id}`, {
+          headers: openaiHeaders,
+          signal: AbortSignal.timeout(60000),
+        });
+        const next = await poll.json().catch(() => ({}));
+        if (!poll.ok) {
+          return res.status(poll.status).json({ error: next?.error?.message || `OpenAI polling failed (${poll.status}).` });
+        }
+        payload = next;
+      }
+      if (payload?.status !== 'completed' && !extractResponseOutputText(payload)) {
+        return res.status(502).json({
+          error: payload?.error?.message || payload?.incomplete_details?.reason || `OpenAI response ${payload?.status || 'failed'}.`,
+        });
+      }
     }
     res.json({ text: extractResponseOutputText(payload), model: payload.model || model, usage: payload.usage || null });
   } catch (error) {
