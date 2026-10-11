@@ -3891,7 +3891,9 @@ app.get('/health', (_, res) => {
 // visual novel. Le client n'a pas de clé OpenAI : il passe par ce backend.
 // ---------------------------------------------------------------------------
 const textModel = process.env.TEXT_MODEL || 'gpt-4.1-mini';
-const textTimeoutMs = Number(process.env.TEXT_TIMEOUT_MS || 240000);
+// Le code complet d'un jeu, avec une réflexion poussée, peut prendre plus de 4 minutes.
+const textTimeoutMs = Math.max(Number(process.env.TEXT_TIMEOUT_MS || 0), 1200000);
+const textReasoningEfforts = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 const allowedTextModel = /^(gpt|o\d|chatgpt)[\w.-]*$/i;
 
 app.get('/api/text/models', requireAuth, async (_, res) => {
@@ -3933,7 +3935,11 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
     .filter(Boolean);
   if (!content.length) return res.status(400).json({ error: 'Missing text content.' });
 
-  const maxOutputTokens = Math.min(Math.max(Number(req.body?.maxOutputTokens) || 12000, 256), 32000);
+  // Réflexion et réponse partagent ce budget : de la marge pour le code complet d'un jeu.
+  const maxOutputTokens = Math.min(Math.max(Number(req.body?.maxOutputTokens) || 12000, 256), 128000);
+  // Intensité de réflexion demandée par le client (qualité plutôt que vitesse).
+  const effort = cleanText(req.body?.reasoningEffort);
+  const reasoningEffort = textReasoningEfforts.includes(effort) ? effort : null;
   const body = {
     model,
     input: [
@@ -3941,6 +3947,7 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
       { role: 'user', content },
     ],
     max_output_tokens: maxOutputTokens,
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     ...(req.body?.json ? { text: { format: { type: 'json_object' } } } : {}),
   };
 
