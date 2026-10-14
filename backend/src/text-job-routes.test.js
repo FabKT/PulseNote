@@ -44,6 +44,7 @@ test('authenticated HTTP endpoints acknowledge promptly, recover reads and isola
     const recovered = await (await fetch(statusUrl, { headers })).json();
     assert.equal(recovered.result.text, '{"ok":true}');
     assert.equal(creates, 1);
+    assert.equal((await fetch(`${origin}/api/text/capabilities`, { headers })).headers.get('cache-control'), 'no-store');
     assert.equal((await fetch(statusUrl, { headers: { ...headers, 'x-app-id': 'other', 'x-text-job-ticket': recovered.ticket } })).status, 403);
   } finally {
     server.closeAllConnections();

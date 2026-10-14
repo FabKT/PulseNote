@@ -10,6 +10,7 @@ function failure(res, error, submitting = false) {
 }
 
 export function registerTextJobRoutes(app, { requireAuth, jobs, prepare }) {
+  app.use('/api/text', (_, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.get('/api/text/capabilities', requireAuth, (_, res) => res.json({ transport: 'text-jobs-v1', resumable: true }));
   app.post('/api/text/jobs', requireAuth, (req, res) => {
     try { res.status(202).json(jobs.start(owner(req), req.body?.requestId, prepare(req.body))); }
