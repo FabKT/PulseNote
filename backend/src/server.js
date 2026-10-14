@@ -10,6 +10,9 @@ import OpenAI from 'openai';
 import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import admin from 'firebase-admin';
+import { textTimeoutMs as parseTextTimeoutMs, textTimeoutOptions, textDeadline } from './text-timeout.js';
+import { createTextJobs, prepareTextBody } from './text-jobs.js';
+import { registerTextJobRoutes } from './text-job-routes.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -3891,10 +3894,31 @@ app.get('/health', (_, res) => {
 // visual novel. Le client n'a pas de clé OpenAI : il passe par ce backend.
 // ---------------------------------------------------------------------------
 const textModel = process.env.TEXT_MODEL || 'gpt-4.1-mini';
-// Le code complet d'un jeu, avec une réflexion poussée, peut prendre plus de 4 minutes.
-const textTimeoutMs = Math.max(Number(process.env.TEXT_TIMEOUT_MS || 0), 1200000);
+// No total generation deadline unless an operator explicitly configures one.
+const textTimeoutMs = parseTextTimeoutMs(process.env.TEXT_TIMEOUT_MS);
 const textReasoningEfforts = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 const allowedTextModel = /^(gpt|o\d|chatgpt)[\w.-]*$/i;
+
+async function textProviderRequest(method, responseId, body) {
+  const suffix = responseId ? `/${encodeURIComponent(responseId)}` : '';
+  const response = await fetch(`https://api.openai.com/v1/responses${suffix}${method === 'CANCEL' ? '/cancel' : ''}`, {
+    method: method === 'CANCEL' ? 'POST' : method,
+    headers: { Authorization: `Bearer ${openaiApiKey}`, 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(90000),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw Object.assign(new Error(payload?.error?.message || `Text provider HTTP ${response.status}.`), { status: response.status });
+  return payload;
+}
+const textJobs = createTextJobs({
+  secret: appClientToken,
+  create: (body) => textProviderRequest('POST', null, body),
+  retrieve: (id) => textProviderRequest('GET', id),
+  cancel: (id) => textProviderRequest('CANCEL', id),
+  extractText: extractResponseOutputText,
+});
+registerTextJobRoutes(app, { requireAuth, jobs: textJobs, prepare: (body) => prepareTextBody(body, textModel) });
 
 app.get('/api/text/models', requireAuth, async (_, res) => {
   if (!openaiApiKey) return res.status(503).json({ error: 'OPENAI_API_KEY is not configured.' });
@@ -3961,7 +3985,7 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
       method: 'POST',
       headers: openaiHeaders,
       body: JSON.stringify(background ? { ...body, background: true, store: true } : body),
-      signal: AbortSignal.timeout(background ? 60000 : textTimeoutMs),
+      ...textTimeoutOptions(textTimeoutMs),
     });
     let payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -3971,7 +3995,7 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
       });
     }
     if (background) {
-      const deadline = Date.now() + textTimeoutMs;
+      const deadline = textDeadline(textTimeoutMs);
       while (['queued', 'in_progress'].includes(payload?.status)) {
         if (Date.now() > deadline) {
           return res.status(504).json({ error: `OpenAI text request still running after ${Math.round(textTimeoutMs / 60000)} min.` });
@@ -3979,7 +4003,7 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
         await new Promise((resolve) => setTimeout(resolve, 3000));
         const poll = await fetch(`https://api.openai.com/v1/responses/${payload.id}`, {
           headers: openaiHeaders,
-          signal: AbortSignal.timeout(60000),
+          ...textTimeoutOptions(textTimeoutMs),
         });
         const next = await poll.json().catch(() => ({}));
         if (!poll.ok) {
@@ -3993,7 +4017,13 @@ app.post('/api/text/complete', requireAuth, async (req, res) => {
         });
       }
     }
-    res.json({ text: extractResponseOutputText(payload), model: payload.model || model, usage: payload.usage || null });
+    res.json({
+      text: extractResponseOutputText(payload),
+      model: payload.model || model,
+      usage: payload.usage || null,
+      status: payload.status || null,
+      incompleteReason: payload.incomplete_details?.reason || null,
+    });
   } catch (error) {
     res.status(502).json({ error: errorText(error) });
   }

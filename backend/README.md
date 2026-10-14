@@ -137,3 +137,29 @@ Options simples :
 - Google Cloud Run
 
 Le backend doit être accessible en HTTPS pour l'application mobile.
+
+## Reprise des generations de texte
+
+Les clients compatibles utilisent `GET /api/text/capabilities`, puis
+`POST /api/text/jobs` avec un UUID `requestId`. La reponse 202 est immediate.
+`GET /api/text/jobs/:requestId` suit la meme reponse OpenAI en background.
+`POST /api/text/jobs/:requestId/cancel` demande son annulation. Toutes ces routes
+gardent le middleware d'authentification existant; aucun appel de generation ne
+doit etre repete automatiquement apres une reponse reseau incertaine.
+
+Le client conserve le ticket signe retourne par le suivi et le renvoie dans
+`x-text-job-ticket`. Avec ce ticket et le meme secret applicatif, le suivi peut
+reprendre apres un redemarrage du backend sans recreer de reponse OpenAI.
+Avant reception de l'identifiant fournisseur/ticket, une perte du registre en
+memoire reste non recuperable: le client signale l'incertitude, il ne resoumet pas.
+La deduplication des POST est en memoire, pas une garantie durable multi-instance.
+Un worker et un registre persistant restent necessaires pour cette garantie.
+
+L'ancien `POST /api/text/complete` reste compatible. `TEXT_TIMEOUT_MS=0` ou absent
+supprime sa limite totale applicative. Les requetes du nouveau protocole ont une
+limite reseau individuelle de 90 secondes, pas une limite de duree de generation.
+L'annulation n'est pas une garantie de remboursement du travail deja accepte.
+Aucune nouvelle cle ni variable secrete n'est necessaire.
+
+Tests sans appel fournisseur payant:
+`node --test src/text-jobs.test.js src/text-job-routes.test.js src/text-timeout.test.js`.
