@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
+import { prepareClaudeBody, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
 
-export function prepareTextBody(input, defaultModel) {
+export function prepareTextBody(input, defaultModel, claudeModel = DEFAULT_CLAUDE_MODEL) {
+  if (input?.provider && !['gpt', 'claude'].includes(input.provider)) throw Object.assign(new Error('Unsupported text provider.'), { status: 400 });
+  if (input?.provider === 'claude') return prepareClaudeBody(input, claudeModel);
   const clean = (value) => typeof value === 'string' ? value.trim() : '';
   const requested = clean(input?.model);
   const model = /^(gpt|o\d|chatgpt)[\w.-]*$/i.test(requested) ? requested : defaultModel;

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-function owner(req) {
+export function owner(req) {
   const identity = req.authProvider ? `${req.authProvider}:${req.user?.uid || req.user?.id}` : `app:${req.header('x-app-id') || 'default'}`;
   return crypto.createHash('sha256').update(identity).digest('hex');
 }
@@ -9,9 +9,9 @@ function failure(res, error, submitting = false) {
   res.status(status).json({ error: error.message || 'Text job unavailable.', recoverable: !submitting && [408, 429, 500, 502, 503, 504].includes(status) });
 }
 
-export function registerTextJobRoutes(app, { requireAuth, jobs, prepare }) {
+export function registerTextJobRoutes(app, { requireAuth, jobs, prepare, providers = {} }) {
   app.use('/api/text', (_, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  app.get('/api/text/capabilities', requireAuth, (_, res) => res.json({ transport: 'text-jobs-v1', resumable: true }));
+  app.get('/api/text/capabilities', requireAuth, (_, res) => res.json({ transport: 'text-jobs-v1', resumable: true, providers }));
   app.post('/api/text/jobs', requireAuth, (req, res) => {
     try { res.status(202).json(jobs.start(owner(req), req.body?.requestId, prepare(req.body))); }
     catch (error) { failure(res, error, true); }

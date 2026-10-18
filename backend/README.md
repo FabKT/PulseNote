@@ -163,3 +163,29 @@ Aucune nouvelle cle ni variable secrete n'est necessaire.
 
 Tests sans appel fournisseur payant:
 `node --test src/text-jobs.test.js src/text-job-routes.test.js src/text-timeout.test.js`.
+
+## Claude and Meshy via fal.ai
+
+Text jobs accept `provider: "gpt"` (default) or `provider: "claude"`.
+Configure `CLAUDE_API_KEY` or `ANTHROPIC_API_KEY`; `CLAUDE_MODEL` defaults to
+`claude-sonnet-5-5`. Multi-workspace keys additionally require
+`ANTHROPIC_WORKSPACE_ID`. These are Console API credentials, not a Claude Code
+OAuth session. Unsupported/unavailable providers never silently fall back to GPT.
+Claude results use the same signed tickets and normalized usage format. Messages
+are streamed server-side and polled through short client requests. Finished results
+are retained for 24 hours in `CLAUDE_JOB_DIR` (temporary directory by default).
+A persistent Render disk is required to keep them across deployments. Running
+Messages cannot be resumed after process restart and are never resubmitted.
+
+Configure `FALAI_API_KEY`, `FAL_KEY` or `FAL_API_KEY` for Meshy v6. Authenticated
+`GET /api/3d/capabilities`, `POST /api/3d/jobs`,
+`GET /api/3d/jobs/:requestId` and `POST /api/3d/jobs/:requestId/cancel` implement
+full textured generation, image reconstruction, humanoid rigging and basic
+animations. Use an application UUID on submission and return the signed ticket in
+`x-3d-job-ticket` for polling/cancellation. Only fixed Meshy endpoints are allowed;
+provider credentials are never forwarded to returned media URLs or foreign hosts.
+Submission deduplication is process-local (24h), not a multi-instance guarantee.
+Cancellation cannot refund already accepted provider work.
+
+Tests without provider charges:
+`node --test src/claude-provider.test.js src/fal-meshy.test.js src/text-jobs.test.js src/text-job-routes.test.js src/text-timeout.test.js`.

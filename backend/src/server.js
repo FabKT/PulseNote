@@ -13,6 +13,8 @@ import admin from 'firebase-admin';
 import { textTimeoutMs as parseTextTimeoutMs, textTimeoutOptions, textDeadline } from './text-timeout.js';
 import { createTextJobs, prepareTextBody } from './text-jobs.js';
 import { registerTextJobRoutes } from './text-job-routes.js';
+import { createClaudeProvider, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
+import { registerFalMeshyRoutes } from './fal-meshy.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -3913,12 +3915,23 @@ async function textProviderRequest(method, responseId, body) {
 }
 const textJobs = createTextJobs({
   secret: appClientToken,
-  create: (body) => textProviderRequest('POST', null, body),
-  retrieve: (id) => textProviderRequest('GET', id),
-  cancel: (id) => textProviderRequest('CANCEL', id),
+  create: (body) => body.model.startsWith('claude-') ? claudeProvider.create(body) : textProviderRequest('POST', null, body),
+  retrieve: (id) => id.startsWith('resp_claude_') ? claudeProvider.retrieve(id) : textProviderRequest('GET', id),
+  cancel: (id) => id.startsWith('resp_claude_') ? claudeProvider.cancel(id) : textProviderRequest('CANCEL', id),
   extractText: extractResponseOutputText,
 });
-registerTextJobRoutes(app, { requireAuth, jobs: textJobs, prepare: (body) => prepareTextBody(body, textModel) });
+const claudeKey = process.env.ANTHROPIC_API_KEY?.trim() || process.env.CLAUDE_API_KEY?.trim();
+const claudeModel = process.env.CLAUDE_MODEL?.trim() || DEFAULT_CLAUDE_MODEL;
+const claudeProvider = createClaudeProvider({ apiKey: claudeKey, workspaceId: process.env.ANTHROPIC_WORKSPACE_ID?.trim(), directory: process.env.CLAUDE_JOB_DIR });
+registerTextJobRoutes(app, {
+  requireAuth, jobs: textJobs,
+  providers: { gpt: { available: !!openaiApiKey, model: textModel }, claude: { available: !!claudeKey, model: claudeModel } },
+  prepare: (body) => {
+    if (body?.provider === 'claude' && !claudeKey) throw Object.assign(new Error('Claude is not configured on Render.'), { status: 503 });
+    return prepareTextBody(body, textModel, claudeModel);
+  },
+});
+registerFalMeshyRoutes(app, { requireAuth, secret: appClientToken, apiKey: process.env.FAL_KEY?.trim() || process.env.FALAI_API_KEY?.trim() || process.env.FAL_API_KEY?.trim() });
 
 app.get('/api/text/models', requireAuth, async (_, res) => {
   if (!openaiApiKey) return res.status(503).json({ error: 'OPENAI_API_KEY is not configured.' });
@@ -3942,6 +3955,7 @@ app.get('/api/text/models', requireAuth, async (_, res) => {
 });
 
 app.post('/api/text/complete', requireAuth, async (req, res) => {
+  if (req.body?.provider && req.body.provider !== 'gpt') return res.status(400).json({ error: 'Use /api/text/jobs for Claude. No GPT fallback was started.' });
   if (!openaiApiKey) return res.status(503).json({ error: 'OPENAI_API_KEY is not configured.' });
   const requested = cleanText(req.body?.model);
   const model = requested && allowedTextModel.test(requested) ? requested : textModel;
