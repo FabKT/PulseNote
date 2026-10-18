@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { prepareTextBody, createTextJobs } from './text-jobs.js';
-import { prepareClaudeBody, readClaudeStream, createClaudeProvider } from './claude-provider.js';
+import { prepareClaudeBody, readClaudeStream, createClaudeProvider, checkClaudeAccess } from './claude-provider.js';
 
 const events = (stop = 'end_turn') => [
   { type: 'message_start', message: { model: 'claude-sonnet-5-5', usage: { input_tokens: 11 } } },
@@ -15,6 +15,33 @@ const events = (stop = 'end_turn') => [
 ];
 const stream = (items) => new Response(items.map((item) => `data: ${JSON.stringify(item)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+test('Claude access check uses a free authenticated model GET with the configured workspace', async () => {
+  let calls = 0;
+  const status = await checkClaudeAccess({ apiKey: 'secret-test-key', workspaceId: 'workspace-test', fetchImpl: async (url, input) => {
+    calls++;
+    assert.equal(url, 'https://api.anthropic.com/v1/models/claude-sonnet-5-5');
+    assert.equal(input.headers['anthropic-workspace-id'], 'workspace-test');
+    assert.equal(input.body, undefined);
+    assert.equal(input.method, undefined);
+    return new Response(JSON.stringify({ id: 'claude-sonnet-5-5' }));
+  } });
+  assert.equal(calls, 1);
+  assert.equal(status.available, true);
+  assert.equal(status.workspaceConfigured, true);
+  assert.doesNotMatch(JSON.stringify(status), /secret-test-key|workspace-test/);
+});
+
+test('Claude access check distinguishes missing workspace, permissions and connection failures without echoing errors', async () => {
+  for (const [httpStatus, message, reason] of [[400, 'anthropic-workspace-id required', 'workspace_required_or_invalid'], [401, 'invalid secret-test-key', 'invalid_credentials'], [404, 'workspace not found', 'model_or_workspace_access_denied']]) {
+    const result = await checkClaudeAccess({ apiKey: 'secret-test-key', fetchImpl: async () => new Response(JSON.stringify({ error: { message } }), { status: httpStatus }) });
+    assert.equal(result.available, false);
+    assert.equal(result.reason, reason);
+    assert.doesNotMatch(JSON.stringify(result), /secret-test-key/);
+  }
+  assert.equal((await checkClaudeAccess({})).reason, 'missing_key');
+  assert.equal((await checkClaudeAccess({ apiKey: 'test', fetchImpl: () => { throw new Error('offline'); } })).reason, 'connection_error');
+});
 
 test('Claude selection preserves references and never sends OpenAI-only fields', () => {
   const body = prepareTextBody({ provider: 'claude', model: 'gpt-6.1-sol', reasoningEffort: 'xhigh', json: true, content: [{ type: 'text', text: 'request' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,YQ==' } }] }, 'gpt-6.1-sol');

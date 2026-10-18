@@ -5,6 +5,24 @@ import os from 'node:os';
 
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5-5';
 
+export async function checkClaudeAccess({ apiKey, workspaceId, model = DEFAULT_CLAUDE_MODEL, fetchImpl = fetch }) {
+  const configuration = { configured: !!apiKey, workspaceConfigured: !!workspaceId, model };
+  if (!apiKey) return { ...configuration, available: false, reason: 'missing_key' };
+  try {
+    const response = await fetchImpl(`https://api.anthropic.com/v1/models/${encodeURIComponent(model)}`, {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', ...(workspaceId ? { 'anthropic-workspace-id': workspaceId } : {}) },
+      signal: AbortSignal.timeout(30000),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload.id === model) return { ...configuration, available: true, httpStatus: response.status };
+    const message = String(payload.error?.message || '');
+    const reason = /workspace/i.test(message) && response.status === 400 ? 'workspace_required_or_invalid'
+      : response.status === 401 ? 'invalid_credentials'
+      : [403, 404].includes(response.status) ? 'model_or_workspace_access_denied' : 'provider_unavailable';
+    return { ...configuration, available: false, httpStatus: response.status, reason };
+  } catch { return { ...configuration, available: false, reason: 'connection_error' }; }
+}
+
 export function prepareClaudeBody(input, model = DEFAULT_CLAUDE_MODEL) {
   if (!/^claude-[\w.-]+$/.test(model)) throw Object.assign(new Error('Invalid CLAUDE_MODEL configuration.'), { status: 503 });
   const content = (Array.isArray(input?.content) ? input.content : []).flatMap((part) => {

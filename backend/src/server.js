@@ -13,7 +13,7 @@ import admin from 'firebase-admin';
 import { textTimeoutMs as parseTextTimeoutMs, textTimeoutOptions, textDeadline } from './text-timeout.js';
 import { createTextJobs, prepareTextBody } from './text-jobs.js';
 import { registerTextJobRoutes } from './text-job-routes.js';
-import { createClaudeProvider, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
+import { createClaudeProvider, checkClaudeAccess, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
 import { registerFalMeshyRoutes } from './fal-meshy.js';
 
 const app = express();
@@ -3933,7 +3933,12 @@ registerTextJobRoutes(app, {
 });
 registerFalMeshyRoutes(app, { requireAuth, secret: appClientToken, apiKey: process.env.FAL_KEY?.trim() || process.env.FALAI_API_KEY?.trim() || process.env.FAL_API_KEY?.trim() });
 
-app.get('/api/text/models', requireAuth, async (_, res) => {
+app.get('/api/text/models', requireAuth, async (req, res) => {
+  if (req.query.provider === 'claude') {
+    const status = await checkClaudeAccess({ apiKey: claudeKey, workspaceId: process.env.ANTHROPIC_WORKSPACE_ID?.trim(), model: claudeModel });
+    return res.status(status.available ? 200 : 503).json({ provider: 'claude', ...status });
+  }
+  if (req.query.provider && req.query.provider !== 'gpt') return res.status(400).json({ error: 'Unsupported text provider.' });
   if (!openaiApiKey) return res.status(503).json({ error: 'OPENAI_API_KEY is not configured.' });
   try {
     const response = await fetch('https://api.openai.com/v1/models', {
