@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import { owner } from './text-job-routes.js';
 
 const BASE = 'https://queue.fal.run';
+// API de la plateforme fal : estimation avant génération et coût réel facturé après.
+const PLATFORM = 'https://api.fal.ai/v1';
 const endpoints = { text: 'fal-ai/meshy/v6/text-to-3d', image: 'fal-ai/meshy/v6/image-to-3d' };
 const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
@@ -26,8 +28,11 @@ export function prepareFalMeshyInput(body) {
   };
 }
 
-export function createFalMeshy({ secret, apiKey, fetchImpl = fetch }) {
+// billingKey : clé fal avec le droit « billing » (FAL_BILLING_KEY) pour lire le coût réel ;
+// sans elle, l'appelant compte la génération au prix fal du moment (estimate).
+export function createFalMeshy({ secret, apiKey, billingKey, fetchImpl = fetch, billingDelayMs = 1500 }) {
   const submissions = new Map();
+  const estimates = new Map();
   const sign = (claims) => {
     const encoded = Buffer.from(JSON.stringify(claims)).toString('base64url');
     return `${encoded}.${crypto.createHmac('sha256', secret).update(encoded).digest('base64url')}`;
@@ -58,8 +63,48 @@ export function createFalMeshy({ secret, apiKey, fetchImpl = fetch }) {
     if (!response.ok) fail(response.status, `Meshy via fal.ai HTTP ${response.status}. No automatic submission retry was made.`);
     return json;
   };
+  // Coût réel d'une génération (USD), lu dans les événements de facturation fal. Il peut
+  // arriver avec quelques secondes de retard : quelques essais, puis null (l'appelant garde
+  // alors son estimation). Une clé sans le droit « billing » donne aussi null, sans bloquer.
+  const billedCost = async (requestId) => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, billingDelayMs));
+      try {
+        const since = new Date(Date.now() - 7 * 86400000).toISOString();
+        const url = PLATFORM + '/models/billing-events?request_id=' + encodeURIComponent(requestId) + '&start=' + encodeURIComponent(since);
+        const response = await fetchImpl(url, { method: 'GET', headers: { Authorization: 'Key ' + (billingKey || apiKey) }, signal: AbortSignal.timeout(15000) });
+        if (!response.ok) return null;
+        const events = (await response.json())?.billing_events;
+        if (Array.isArray(events) && events.length) {
+          const total = events.reduce((sum, event) => sum + (Number.isFinite(event?.cost_total) ? event.cost_total : 0), 0);
+          return Number.isFinite(total) ? total : null;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
   return {
     available: !!apiKey,
+    // Coût moyen d'un appel (USD) au tarif fal du moment, pour réserver le budget avant de lancer.
+    async estimate(body) {
+      if (!apiKey) fail(503, 'FAL_KEY / FALAI_API_KEY is not configured on Render.');
+      const { endpoint } = prepareFalMeshyInput({ prompt: 'estimate', ...body, requestId: undefined });
+      const cached = estimates.get(endpoint);
+      if (cached && Date.now() - cached.at < 3600000) return cached.value;
+      const response = await fetchImpl(PLATFORM + '/models/pricing/estimate', {
+        method: 'POST',
+        headers: { Authorization: 'Key ' + apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estimate_type: 'historical_api_price', endpoints: { [endpoint]: { call_quantity: 1 } } }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !Number.isFinite(json?.total_cost) || json.total_cost <= 0) fail(502, 'fal price estimate unavailable.');
+      const value = { endpoint, costUsd: json.total_cost, currency: json.currency || 'USD' };
+      estimates.set(endpoint, { at: Date.now(), value });
+      return value;
+    },
     async start(identity, body) {
       if (!uuid.test(body?.requestId || '')) fail(400, 'Invalid 3D request ID.');
       const { endpoint, input } = prepareFalMeshyInput(body);
@@ -83,9 +128,10 @@ export function createFalMeshy({ secret, apiKey, fetchImpl = fetch }) {
       const claims = decode(ticket, identity, requestId);
       const status = await call(safeQueueUrl(claims.statusUrl));
       if (status.status !== 'COMPLETED') return { status: status.status, requestId };
-      if (status.error) return { status: 'FAILED', requestId, error: 'Meshy generation failed at fal.ai.' };
+      // costUsd : coût réellement facturé par fal (null s'il n'est pas encore connu).
+      if (status.error) return { status: 'FAILED', requestId, error: 'Meshy generation failed at fal.ai.', costUsd: await billedCost(requestId) };
       const result = await call(safeQueueUrl(claims.responseUrl));
-      return { status: 'COMPLETED', requestId, result };
+      return { status: 'COMPLETED', requestId, result, costUsd: await billedCost(requestId) };
     },
     async cancel(identity, requestId, ticket) {
       const claims = decode(ticket, identity, requestId);
@@ -99,7 +145,11 @@ export function createFalMeshy({ secret, apiKey, fetchImpl = fetch }) {
 export function registerFalMeshyRoutes(app, { requireAuth, ...options }) {
   const jobs = createFalMeshy(options);
   app.use('/api/3d', (_, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  app.get('/api/3d/capabilities', requireAuth, (_, res) => res.json({ provider: 'fal', available: jobs.available, textTo3d: true, imageTo3d: true, rigging: true, referenceImages: 1 }));
+  app.get('/api/3d/capabilities', requireAuth, (_, res) => res.json({ provider: 'fal', available: jobs.available, textTo3d: true, imageTo3d: true, rigging: true, referenceImages: 1, estimate: true, billedCost: true }));
+  app.post('/api/3d/estimate', requireAuth, async (req, res) => {
+    try { res.json(await jobs.estimate(req.body)); }
+    catch (error) { res.status(Number(error.status) || 502).json({ error: error.status ? error.message : '3D price estimate unavailable.' }); }
+  });
   app.post('/api/3d/jobs', requireAuth, async (req, res) => {
     try { res.status(202).json(await jobs.start(owner(req), req.body)); }
     catch (error) { res.status(Number(error.status) || 502).json({ error: error.status ? error.message : '3D submission connection interrupted. Do not submit again until its status has been checked.' }); }

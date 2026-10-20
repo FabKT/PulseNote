@@ -3931,7 +3931,7 @@ registerTextJobRoutes(app, {
     return prepareTextBody(body, textModel, claudeModel);
   },
 });
-registerFalMeshyRoutes(app, { requireAuth, secret: appClientToken, apiKey: process.env.FAL_KEY?.trim() || process.env.FALAI_API_KEY?.trim() || process.env.FAL_API_KEY?.trim() });
+registerFalMeshyRoutes(app, { requireAuth, secret: appClientToken, apiKey: process.env.FAL_KEY?.trim() || process.env.FALAI_API_KEY?.trim() || process.env.FAL_API_KEY?.trim(), billingKey: process.env.FAL_BILLING_KEY?.trim() || undefined });
 
 app.get('/api/text/models', requireAuth, async (req, res) => {
   if (req.query.provider === 'claude') {
