@@ -46,6 +46,7 @@ test('Kimi is the third text provider', () => {
 test('Kimi key is read under the usual names', () => {
   assert.equal(kimiApiKey({ MOONSHOT_API_KEY: ' sk-1 ' }), 'sk-1');
   assert.equal(kimiApiKey({ KIMI_API_KEY: 'sk-2', MOONSHOT_API_KEY: 'sk-1' }), 'sk-2');
+  assert.equal(kimiApiKey({ KIMI_AI: 'sk-3' }), 'sk-3');
   assert.equal(kimiApiKey({}), '');
 });
 

@@ -13,7 +13,7 @@ export const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.ai/v1';
 
 /** Clé lue sous les noms usuels (le nom choisi sur Render n'importe pas). */
 export function kimiApiKey(env = process.env) {
-  return (env.KIMI_API_KEY || env.MOONSHOT_API_KEY || env.KIMI_KEY || env.MOONSHOT_KEY || '').trim();
+  return (env.KIMI_API_KEY || env.KIMI_AI || env.MOONSHOT_API_KEY || env.KIMI_KEY || env.MOONSHOT_KEY || '').trim();
 }
 
 // Niveaux de réflexion du site → Kimi K3 (low, high, max ; réflexion toujours active).
