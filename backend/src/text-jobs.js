@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
 import { prepareClaudeBody, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
+import { prepareKimiBody, DEFAULT_KIMI_MODEL } from './kimi-provider.js';
 
-export function prepareTextBody(input, defaultModel, claudeModel = DEFAULT_CLAUDE_MODEL) {
-  if (input?.provider && !['gpt', 'claude'].includes(input.provider)) throw Object.assign(new Error('Unsupported text provider.'), { status: 400 });
+export function prepareTextBody(input, defaultModel, claudeModel = DEFAULT_CLAUDE_MODEL, kimiModel = DEFAULT_KIMI_MODEL) {
+  if (input?.provider && !['gpt', 'claude', 'kimi'].includes(input.provider)) throw Object.assign(new Error('Unsupported text provider.'), { status: 400 });
   if (input?.provider === 'claude') return prepareClaudeBody(input, claudeModel);
+  if (input?.provider === 'kimi') return prepareKimiBody(input, kimiModel);
   const clean = (value) => typeof value === 'string' ? value.trim() : '';
   const requested = clean(input?.model);
   const model = /^(gpt|o\d|chatgpt)[\w.-]*$/i.test(requested) ? requested : defaultModel;

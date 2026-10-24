@@ -16,6 +16,7 @@ import { registerTextJobRoutes } from './text-job-routes.js';
 import { createClaudeProvider, checkClaudeAccess, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
 import { registerFalMeshyRoutes } from './fal-meshy.js';
 import { registerGameRunnerRoutes } from './game-runner.js';
+import { createKimiProvider, DEFAULT_KIMI_MODEL, DEFAULT_KIMI_BASE_URL, kimiApiKey } from './kimi-provider.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -3916,20 +3917,25 @@ async function textProviderRequest(method, responseId, body) {
 }
 const textJobs = createTextJobs({
   secret: appClientToken,
-  create: (body) => body.model.startsWith('claude-') ? claudeProvider.create(body) : textProviderRequest('POST', null, body),
-  retrieve: (id) => id.startsWith('resp_claude_') ? claudeProvider.retrieve(id) : textProviderRequest('GET', id),
-  cancel: (id) => id.startsWith('resp_claude_') ? claudeProvider.cancel(id) : textProviderRequest('CANCEL', id),
+  create: (body) => body.model.startsWith('claude-') ? claudeProvider.create(body) : body.model.startsWith('kimi-') ? kimiProvider.create(body) : textProviderRequest('POST', null, body),
+  retrieve: (id) => id.startsWith('resp_claude_') ? claudeProvider.retrieve(id) : id.startsWith('resp_kimi_') ? kimiProvider.retrieve(id) : textProviderRequest('GET', id),
+  cancel: (id) => id.startsWith('resp_claude_') ? claudeProvider.cancel(id) : id.startsWith('resp_kimi_') ? kimiProvider.cancel(id) : textProviderRequest('CANCEL', id),
   extractText: extractResponseOutputText,
 });
 const claudeKey = process.env.ANTHROPIC_API_KEY?.trim() || process.env.CLAUDE_API_KEY?.trim();
 const claudeModel = process.env.CLAUDE_MODEL?.trim() || DEFAULT_CLAUDE_MODEL;
 const claudeProvider = createClaudeProvider({ apiKey: claudeKey, workspaceId: process.env.ANTHROPIC_WORKSPACE_ID?.trim(), directory: process.env.CLAUDE_JOB_DIR });
+// Kimi (Moonshot AI) : troisième fournisseur de texte, même contrat que GPT et Claude.
+const kimiKey = kimiApiKey();
+const kimiModel = process.env.KIMI_MODEL?.trim() || DEFAULT_KIMI_MODEL;
+const kimiProvider = createKimiProvider({ apiKey: kimiKey, baseUrl: process.env.KIMI_BASE_URL?.trim() || DEFAULT_KIMI_BASE_URL, directory: process.env.KIMI_JOB_DIR });
 registerTextJobRoutes(app, {
   requireAuth, jobs: textJobs,
-  providers: { gpt: { available: !!openaiApiKey, model: textModel }, claude: { available: !!claudeKey, model: claudeModel } },
+  providers: { gpt: { available: !!openaiApiKey, model: textModel }, claude: { available: !!claudeKey, model: claudeModel }, kimi: { available: !!kimiKey, model: kimiModel } },
   prepare: (body) => {
     if (body?.provider === 'claude' && !claudeKey) throw Object.assign(new Error('Claude is not configured on Render.'), { status: 503 });
-    return prepareTextBody(body, textModel, claudeModel);
+    if (body?.provider === 'kimi' && !kimiKey) throw Object.assign(new Error('Kimi is not configured on Render.'), { status: 503 });
+    return prepareTextBody(body, textModel, claudeModel, kimiModel);
   },
 });
 registerFalMeshyRoutes(app, { requireAuth, secret: appClientToken, apiKey: process.env.FAL_KEY?.trim() || process.env.FALAI_API_KEY?.trim() || process.env.FAL_API_KEY?.trim(), billingKey: process.env.FAL_BILLING_KEY?.trim() || undefined });
