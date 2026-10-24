@@ -15,6 +15,7 @@ import { createTextJobs, prepareTextBody } from './text-jobs.js';
 import { registerTextJobRoutes } from './text-job-routes.js';
 import { createClaudeProvider, checkClaudeAccess, DEFAULT_CLAUDE_MODEL } from './claude-provider.js';
 import { registerFalMeshyRoutes } from './fal-meshy.js';
+import { registerGameRunnerRoutes } from './game-runner.js';
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -3932,6 +3933,8 @@ registerTextJobRoutes(app, {
   },
 });
 registerFalMeshyRoutes(app, { requireAuth, secret: appClientToken, apiKey: process.env.FAL_KEY?.trim() || process.env.FALAI_API_KEY?.trim() || process.env.FAL_API_KEY?.trim(), billingKey: process.env.FAL_BILLING_KEY?.trim() || undefined });
+// Banc d'essai des jeux CollabGaming (navigateur chargé seulement pendant un essai).
+registerGameRunnerRoutes(app, { requireAuth });
 
 app.get('/api/text/models', requireAuth, async (req, res) => {
   if (req.query.provider === 'claude') {

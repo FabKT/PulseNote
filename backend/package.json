@@ -9,6 +9,7 @@
     "check": "node --check src/server.js"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^153.0.0",
     "@supabase/supabase-js": "^2.47.10",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -16,6 +17,7 @@
     "firebase-admin": "^13.9.0",
     "multer": "^2.0.2",
     "openai": "^4.78.1",
+    "playwright-core": "^1.64.1",
     "sharp": "^0.35.4"
   },
   "engines": {
