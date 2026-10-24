@@ -21,6 +21,8 @@ export function prepareTextBody(input, defaultModel, claudeModel = DEFAULT_CLAUD
     max_output_tokens: Math.min(Math.max(Number(input?.maxOutputTokens) || 12000, 256), 128000),
     ...(['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort) ? { reasoning: { effort } } : {}),
     ...(input?.json ? { text: { format: { type: 'json_object' } } } : {}),
+    // Même début de requête à chaque tour d'un agent : clé de cache OpenAI (prix réduit).
+    ...(typeof input?.cacheKey === 'string' && /^[\w:.-]{1,64}$/.test(input.cacheKey) ? { prompt_cache_key: input.cacheKey } : {}),
   };
 }
 

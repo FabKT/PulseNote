@@ -60,7 +60,7 @@ test('Claude stream normalizes usage and truncation without including thinking',
   assert.equal(result.status, 'incomplete');
   assert.equal(result.incomplete_details.reason, 'max_output_tokens');
   assert.equal(result.output[0].content[0].text, '{"ok":true}');
-  assert.deepEqual(result.usage, { input_tokens: 11, output_tokens: 9 });
+  assert.deepEqual(result.usage, { input_tokens: 11, output_tokens: 9, input_tokens_details: { cached_tokens: 0 } });
   await assert.rejects(readClaudeStream(stream(events().slice(0, -1))), /interrupted/);
 });
 
@@ -77,6 +77,11 @@ test('Claude uses short job polling, survives lost browser connections and persi
   } });
   const setup = () => createTextJobs({ secret: 'test-secret', create: (body) => provider.create(body), retrieve: (id) => provider.retrieve(id), cancel: (id) => provider.cancel(id), extractText: (p) => p.output?.[0]?.content?.[0]?.text || '' });
   const jobs = setup(), requestId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const cached = prepareClaudeBody({ system: 'rules', cache: true, content: [{ type: 'text', text: 'fixed', cache: true }, { type: 'text', text: 'turn' }] });
+  assert.deepEqual(cached.system, [{ type: 'text', text: 'rules', cache_control: { type: 'ephemeral' } }]);
+  assert.deepEqual(cached.messages[0].content[0].cache_control, { type: 'ephemeral' });
+  assert.equal(cached.messages[0].content[1].cache_control, undefined);
+  assert.equal(typeof prepareClaudeBody({ system: 'rules', content: [{ type: 'text', text: 'x' }] }).system, 'string');
   const body = prepareClaudeBody({ content: [{ type: 'text', text: 'go' }] });
   jobs.start('owner', requestId, body);
   for (let i = 0; !finish && i < 100; i++) await tick();

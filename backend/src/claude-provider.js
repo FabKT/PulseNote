@@ -25,8 +25,11 @@ export async function checkClaudeAccess({ apiKey, workspaceId, model = DEFAULT_C
 
 export function prepareClaudeBody(input, model = DEFAULT_CLAUDE_MODEL) {
   if (!/^claude-[\w.-]+$/.test(model)) throw Object.assign(new Error('Invalid CLAUDE_MODEL configuration.'), { status: 503 });
+  // Cache Anthropic : blocs marqués « cache » (début fixe d'une conversation), 3 au plus.
+  const marked = (Array.isArray(input?.content) ? input.content : []).filter((part) => part?.cache && part?.type === 'text').slice(-3);
   const content = (Array.isArray(input?.content) ? input.content : []).flatMap((part) => {
-    if (part?.type === 'text' && typeof part.text === 'string') return [{ type: 'text', text: part.text }];
+    if (part?.type === 'text' && typeof part.text === 'string')
+      return [{ type: 'text', text: part.text, ...(marked.includes(part) ? { cache_control: { type: 'ephemeral' } } : {}) }];
     const url = part?.type === 'image_url' ? part.image_url?.url : null;
     if (!url) return [];
     const data = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=\r\n]+)$/.exec(url);
@@ -36,9 +39,11 @@ export function prepareClaudeBody(input, model = DEFAULT_CLAUDE_MODEL) {
   });
   if (!content.length) throw Object.assign(new Error('Missing text content.'), { status: 400 });
   const effort = input?.reasoningEffort === 'xhigh' ? 'high' : input?.reasoningEffort;
+  const system = [typeof input?.system === 'string' ? input.system.trim() : '', input?.json ? 'Return only a valid JSON object, without markdown fences or commentary.' : ''].filter(Boolean).join('\n');
   return {
     model,
-    system: [typeof input?.system === 'string' ? input.system.trim() : '', input?.json ? 'Return only a valid JSON object, without markdown fences or commentary.' : ''].filter(Boolean).join('\n'),
+    // Consignes en cache quand l'appelant le demande (mêmes consignes à chaque tour d'un agent).
+    system: input?.cache && system ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system,
     messages: [{ role: 'user', content }],
     max_tokens: Math.min(Math.max(Number(input?.maxOutputTokens) || 12000, 256), 128000),
     ...(['low', 'medium', 'high'].includes(effort) ? { output_config: { effort } } : {}),
@@ -78,7 +83,8 @@ export async function readClaudeStream(response) {
   return {
     model, status: incomplete ? 'incomplete' : 'completed',
     output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
-    usage: { ...usage, input_tokens: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0) },
+    // input_tokens reste le total lu ; la part servie par le cache est donnée à part (prix réduit).
+    usage: { ...usage, input_tokens: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0), input_tokens_details: { cached_tokens: usage.cache_read_input_tokens || 0 } },
     ...(incomplete ? { incomplete_details: { reason: 'max_output_tokens' } } : {}),
     ...(['refusal', 'tool_use'].includes(stopReason) ? { status: 'failed', error: { message: `Claude stopped with ${stopReason}.` } } : {}),
   };

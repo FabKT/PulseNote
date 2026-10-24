@@ -106,4 +106,6 @@ test('request preparation preserves models, images and token budgets', () => {
   assert.equal(body.input[1].content[1].type, 'input_image');
   assert.equal(body.reasoning.effort, 'high');
   assert.throws(() => prepareTextBody({ content: [] }, 'default'), /Missing text content/);
+  assert.equal(prepareTextBody({ cacheKey: 'game-agent:p1', content: [{ type: 'text', text: 'x' }] }, 'default').prompt_cache_key, 'game-agent:p1');
+  assert.equal(prepareTextBody({ cacheKey: 'bad key!', content: [{ type: 'text', text: 'x' }] }, 'default').prompt_cache_key, undefined);
 });
