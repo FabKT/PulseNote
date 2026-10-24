@@ -93,6 +93,10 @@ export async function runGame(body) {
 
 export function registerGameRunnerRoutes(app, { requireAuth }) {
   app.post('/api/game/run', requireAuth, async (req, res) => {
+    // Désactivé par défaut : sur une petite instance, le navigateur épuise la mémoire et fait
+    // redémarrer le serveur (IA des deux sites coupées). À activer seulement avec assez de mémoire.
+    if (process.env.GAME_RUNNER_ENABLED !== 'true')
+      return res.status(503).json({ error: "Banc d'essai désactivé sur ce serveur (mémoire insuffisante)." });
     const body = req.body ?? {};
     if (typeof body.bootDocument !== 'string' || typeof body.start?.code !== 'string')
       return res.status(400).json({ error: 'bootDocument et start.code sont obligatoires.' });
