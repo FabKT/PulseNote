@@ -89,9 +89,29 @@ export async function readKimiStream(response) {
   };
 }
 
-/** Tâches suivies par identifiant (relues sur disque) ; un envoi au fournisseur n'est jamais répété. */
-export function createKimiProvider({ apiKey, baseUrl = DEFAULT_KIMI_BASE_URL, fetchImpl = fetch, directory = path.join(os.tmpdir(), 'pulsenote-kimi-jobs') }) {
+/** Attente avant un nouvel essai après un refus 429 (« try again after N seconds »). */
+export function retryDelayMs(detail, attempt) {
+  const asked = Number(/after\s+(\d+(?:\.\d+)?)\s*s/i.exec(detail)?.[1]);
+  const base = Number.isFinite(asked) && asked > 0 ? asked * 1000 : 2000;
+  return Math.min(30_000, base + attempt * 500);
+}
+
+/**
+ * Tâches suivies par identifiant (relues sur disque). Le compte Kimi limite les requêtes
+ * simultanées (1 sur les petits comptes) : les requêtes attendent leur tour dans une file, et
+ * un refus 429 (requête jamais traitée) est réessayé. Une requête acceptée n'est jamais répétée.
+ */
+export function createKimiProvider({ apiKey, baseUrl = DEFAULT_KIMI_BASE_URL, fetchImpl = fetch, directory = path.join(os.tmpdir(), 'pulsenote-kimi-jobs'), maxConcurrency = Number(process.env.KIMI_MAX_CONCURRENCY) || 1, maxWaitMs = 15 * 60_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const active = new Map();
+  let running = 0;
+  const queue = [];
+  const acquire = () => new Promise((resolve) => {
+    if (running < maxConcurrency) { running++; resolve(); } else queue.push(resolve);
+  });
+  const releaseSlot = () => {
+    const next = queue.shift();
+    if (next) next(); else running--;
+  };
   const valid = (id) => /^resp_kimi_[a-f0-9-]{36}$/.test(id);
   const file = (id) => {
     if (!valid(id)) throw Object.assign(new Error('Invalid Kimi job ID.'), { status: 400 });
@@ -124,22 +144,34 @@ export function createKimiProvider({ apiKey, baseUrl = DEFAULT_KIMI_BASE_URL, fe
       await save(job.payload);
       active.set(id, job);
       void (async () => {
+        await acquire();
         try {
           const { background, store, ...request } = body;
-          const response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(request),
-            signal: controller.signal,
-          });
-          if (!response.ok) {
+          const started = Date.now();
+          let response;
+          for (let attempt = 0; ; attempt++) {
+            controller.signal.throwIfAborted();
+            response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(request),
+              signal: controller.signal,
+            });
+            if (response.ok) break;
             // Message réel du fournisseur (sans la clé) : le diagnostic reste possible.
             const detail = await response.text().catch(() => '');
+            // 429 « trop de requêtes simultanées » : refusée avant tout traitement, nouvel essai.
+            if (response.status === 429 && Date.now() - started < maxWaitMs && !/quota|balance|insufficient|billing/i.test(detail)) {
+              await sleep(retryDelayMs(detail, attempt));
+              continue;
+            }
             throw new Error(`Kimi HTTP ${response.status}: ${detail.slice(0, 300)}`);
           }
           job.payload = { id, ...await readKimiStream(response) };
         } catch (error) {
           job.payload = { id, model: body.model, status: controller.signal.aborted ? 'cancelled' : 'failed', error: { message: controller.signal.aborted ? 'Kimi request cancelled.' : error.message } };
+        } finally {
+          releaseSlot();
         }
         try { await save(job.payload); }
         finally { active.delete(id); }

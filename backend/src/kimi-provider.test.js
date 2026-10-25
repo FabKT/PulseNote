@@ -100,3 +100,47 @@ test('Kimi provider: background job, result kept on disk, provider error surface
   assert.match(failed.error.message, /Kimi HTTP 400: .*bad model/);
   await assert.rejects(createKimiProvider({ apiKey: '', directory }).create({ model: 'kimi-k3.1-pro' }), /not configured/);
 });
+
+test('Kimi: one request at a time, 429 retried, never a second accepted request', async () => {
+  const directory = path.join(os.tmpdir(), `kimi-test-${crypto.randomUUID()}`);
+  let inFlight = 0, maxInFlight = 0, refused = 0, accepted = 0;
+  const provider = createKimiProvider({
+    apiKey: 'sk-test',
+    directory,
+    maxConcurrency: 1,
+    sleep: () => new Promise((r) => setTimeout(r, 5)),
+    fetchImpl: async () => {
+      if (refused < 2) {
+        refused++;
+        return { ok: false, status: 429, text: async () => '{"error":{"message":"max organization concurrency: 1, please try again after 1 seconds"}}' };
+      }
+      inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); accepted++;
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight--;
+      return { ok: true, ...stream([chunk({ content: '{"ok":true}' }, { finish_reason: 'stop' }), '[DONE]']) };
+    },
+  });
+  const jobs = await Promise.all([0, 1, 2].map(() => provider.create(prepareKimiBody({ content: [{ type: 'text', text: 'go' }] }))));
+  const done = [];
+  for (const job of jobs) {
+    let state;
+    for (let i = 0; i < 200 && (!state || state.status === 'in_progress'); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      state = await provider.retrieve(job.id);
+    }
+    done.push(state.status);
+  }
+  assert.deepEqual(done, ['completed', 'completed', 'completed']);
+  assert.equal(maxInFlight, 1);
+  assert.equal(accepted, 3);
+  assert.equal(refused, 2);
+  const quota = createKimiProvider({ apiKey: 'sk-test', directory, sleep: async () => {}, fetchImpl: async () => ({ ok: false, status: 429, text: async () => '{"error":{"message":"insufficient balance"}}' }) });
+  const bad = await quota.create(prepareKimiBody({ content: [{ type: 'text', text: 'go' }] }));
+  let failed;
+  for (let i = 0; i < 50 && (!failed || failed.status === 'in_progress'); i++) {
+    await new Promise((r) => setTimeout(r, 10));
+    failed = await quota.retrieve(bad.id);
+  }
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.error.message, /429.*insufficient balance/);
+});
