@@ -7,7 +7,7 @@ import { prepareTextBody, createTextJobs } from './text-jobs.js';
 import { prepareClaudeBody, readClaudeStream, createClaudeProvider, checkClaudeAccess } from './claude-provider.js';
 
 const events = (stop = 'end_turn') => [
-  { type: 'message_start', message: { model: 'claude-sonnet-5-5', usage: { input_tokens: 11 } } },
+  { type: 'message_start', message: { model: 'claude-opus-5-5', usage: { input_tokens: 11 } } },
   { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'private' } },
   { type: 'content_block_delta', delta: { type: 'text_delta', text: '{"ok":true}' } },
   { type: 'message_delta', delta: { stop_reason: stop }, usage: { output_tokens: 9 } },
@@ -20,11 +20,11 @@ test('Claude access check uses a free authenticated model GET with the configure
   let calls = 0;
   const status = await checkClaudeAccess({ apiKey: 'secret-test-key', workspaceId: 'workspace-test', fetchImpl: async (url, input) => {
     calls++;
-    assert.equal(url, 'https://api.anthropic.com/v1/models/claude-sonnet-5-5');
+    assert.equal(url, 'https://api.anthropic.com/v1/models/claude-opus-5-5');
     assert.equal(input.headers['anthropic-workspace-id'], 'workspace-test');
     assert.equal(input.body, undefined);
     assert.equal(input.method, undefined);
-    return new Response(JSON.stringify({ id: 'claude-sonnet-5-5' }));
+    return new Response(JSON.stringify({ id: 'claude-opus-5-5' }));
   } });
   assert.equal(calls, 1);
   assert.equal(status.available, true);
@@ -45,7 +45,7 @@ test('Claude access check distinguishes missing workspace, permissions and conne
 
 test('Claude selection preserves references and never sends OpenAI-only fields', () => {
   const body = prepareTextBody({ provider: 'claude', model: 'gpt-6.1-sol', reasoningEffort: 'xhigh', json: true, content: [{ type: 'text', text: 'request' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,YQ==' } }] }, 'gpt-6.1-sol');
-  assert.equal(body.model, 'claude-sonnet-5-5');
+  assert.equal(body.model, 'claude-opus-5-5');
   assert.equal(body.messages[0].content[1].source.type, 'base64');
   assert.equal(body.output_config.effort, 'high');
   assert.equal(body.input, undefined);

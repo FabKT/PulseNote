@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, rename, readdir, unlink } from 'node:fs/pro
 import path from 'node:path';
 import os from 'node:os';
 
-export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5-5';
+export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
 
 export async function checkClaudeAccess({ apiKey, workspaceId, model = DEFAULT_CLAUDE_MODEL, fetchImpl = fetch }) {
   const configuration = { configured: !!apiKey, workspaceConfigured: !!workspaceId, model };
