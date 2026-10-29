@@ -98,11 +98,11 @@ export function retryDelayMs(detail, attempt) {
 
 /**
  * Tâches suivies par identifiant (relues sur disque). Le compte Kimi limite les requêtes
- * simultanées (1 au niveau 0, 100 au niveau 2) : au-delà de 20 par défaut (KIMI_MAX_CONCURRENCY),
+ * simultanées (1 au niveau 0, 100 au niveau 2) : au-delà de 100 par défaut (KIMI_MAX_CONCURRENCY),
  * les requêtes attendent leur tour dans une file, et
  * un refus 429 (requête jamais traitée) est réessayé. Une requête acceptée n'est jamais répétée.
  */
-export function createKimiProvider({ apiKey, baseUrl = DEFAULT_KIMI_BASE_URL, fetchImpl = fetch, directory = path.join(os.tmpdir(), 'pulsenote-kimi-jobs'), maxConcurrency = Number(process.env.KIMI_MAX_CONCURRENCY) || 20, maxWaitMs = 15 * 60_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export function createKimiProvider({ apiKey, baseUrl = DEFAULT_KIMI_BASE_URL, fetchImpl = fetch, directory = path.join(os.tmpdir(), 'pulsenote-kimi-jobs'), maxConcurrency = Number(process.env.KIMI_MAX_CONCURRENCY) || 100, maxWaitMs = 15 * 60_000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const active = new Map();
   let running = 0;
   const queue = [];
