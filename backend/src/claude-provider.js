@@ -47,13 +47,16 @@ export function prepareClaudeBody(input, model = DEFAULT_CLAUDE_MODEL) {
     messages: [{ role: 'user', content }],
     max_tokens: Math.min(Math.max(Number(input?.maxOutputTokens) || 12000, 256), 128000),
     ...(['low', 'medium', 'high'].includes(effort) ? { output_config: { effort } } : {}),
+    // Demande refusée par un filtre de sécurité : Anthropic la rejoue sur le modèle de secours
+    // recommandé pour la catégorie du refus (pas de secours pour Haiku).
+    ...(/haiku/.test(model) ? {} : { fallbacks: 'default' }),
     stream: true,
   };
 }
 
 /** Parse SSE incrementally; thinking deltas are never mistaken for the requested JSON. */
 export async function readClaudeStream(response) {
-  let buffer = '', text = '', model = '', stopReason = '', stopped = false;
+  let buffer = '', text = '', model = '', stopReason = '', stopped = false, stopDetails = null;
   let usage = {};
   const decoder = new TextDecoder();
   const consume = (frame) => {
@@ -64,7 +67,13 @@ export async function readClaudeStream(response) {
     if (event.type === 'message_start') { model = event.message?.model || ''; usage = { ...event.message?.usage }; }
     if (event.type === 'content_block_start' && event.content_block?.type === 'text') text += event.content_block.text || '';
     if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') text += event.delta.text || '';
-    if (event.type === 'message_delta') { stopReason = event.delta?.stop_reason || stopReason; usage = { ...usage, ...event.usage }; }
+    if (event.type === 'message_delta') {
+      stopReason = event.delta?.stop_reason || stopReason;
+      stopDetails = event.delta?.stop_details ?? event.stop_details ?? stopDetails;
+      // Secours en cours de réponse : le modèle qui a réellement répondu (facturation).
+      if (event.message?.model) model = event.message.model;
+      usage = { ...usage, ...event.usage };
+    }
     if (event.type === 'message_stop') stopped = true;
   };
   if (!response.body) throw new Error('Claude returned no response stream.');
@@ -86,7 +95,7 @@ export async function readClaudeStream(response) {
     // input_tokens reste le total lu ; la part servie par le cache est donnée à part (prix réduit).
     usage: { ...usage, input_tokens: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0), input_tokens_details: { cached_tokens: usage.cache_read_input_tokens || 0 } },
     ...(incomplete ? { incomplete_details: { reason: 'max_output_tokens' } } : {}),
-    ...(['refusal', 'tool_use'].includes(stopReason) ? { status: 'failed', error: { message: `Claude stopped with ${stopReason}.` } } : {}),
+    ...(['refusal', 'tool_use'].includes(stopReason) ? { status: 'failed', error: { message: `Claude stopped with ${stopReason}${stopReason === 'refusal' ? ` (category: ${stopDetails?.category || 'unknown'})` : ''}.` } } : {}),
   };
 }
 
@@ -127,10 +136,17 @@ export function createClaudeProvider({ apiKey, workspaceId, fetchImpl = fetch, d
       void (async () => {
         try {
           const { background, store, ...message } = body;
-          const response = await fetchImpl('https://api.anthropic.com/v1/messages', {
-            method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', ...(workspaceId ? { 'anthropic-workspace-id': workspaceId } : {}) },
-            body: JSON.stringify(message), signal: controller.signal,
+          const send = (payload) => fetchImpl('https://api.anthropic.com/v1/messages', {
+            method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', ...(payload.fallbacks ? { 'anthropic-beta': 'server-side-fallback-2026-07-01' } : {}), ...(workspaceId ? { 'anthropic-workspace-id': workspaceId } : {}) },
+            body: JSON.stringify(payload), signal: controller.signal,
           });
+          let response = await send(message);
+          // Requête rejetée (400) à cause du secours : rien n'a été généré, on la renvoie sans.
+          if (response.status === 400 && message.fallbacks) {
+            const detail = await response.text().catch(() => '');
+            if (/fallback|beta/i.test(detail)) { const { fallbacks, ...plain } = message; response = await send(plain); }
+            else throw new Error(`Claude HTTP 400. ${detail.slice(0, 300)}`);
+          }
           if (!response.ok) throw new Error(`Claude HTTP ${response.status}. Check model access, API credits and credentials in Render.`);
           job.payload = { id, ...await readClaudeStream(response) };
         } catch (error) {

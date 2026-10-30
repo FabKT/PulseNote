@@ -122,3 +122,30 @@ test('the model chosen by the user inside a provider is used, a model of another
   assert.equal(prepareTextBody({ provider: 'kimi', model: 'kimi-k3', content }, 'gpt-default').model, 'kimi-k3');
   assert.equal(prepareTextBody({ provider: 'kimi', model: 'claude-opus-5-5', content }, 'gpt-default').model, 'kimi-k3.1-pro');
 });
+
+test('a refusal reports its category, and safety fallbacks are requested except on Haiku', async () => {
+  const refused = events('refusal');
+  refused[3] = { type: 'message_delta', delta: { stop_reason: 'refusal', stop_details: { category: 'reasoning_extraction' } }, usage: { output_tokens: 0 } };
+  const result = await readClaudeStream(stream(refused));
+  assert.equal(result.status, 'failed');
+  assert.match(result.error.message, /refusal \(category: reasoning_extraction\)/);
+  const input = { content: [{ type: 'text', text: 'x' }] };
+  assert.equal(prepareClaudeBody(input, 'claude-opus-5-5').fallbacks, 'default');
+  assert.equal(prepareClaudeBody(input, 'claude-haiku-5-5').fallbacks, undefined);
+});
+
+test('the fallback beta header is sent, and a 400 caused by it is replayed once without it', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'claude-fallback-'));
+  const sent = [];
+  const provider = createClaudeProvider({ apiKey: 'k', directory, fetchImpl: async (_url, input) => {
+    const body = JSON.parse(input.body);
+    sent.push({ beta: input.headers['anthropic-beta'], fallbacks: body.fallbacks });
+    if (body.fallbacks) return new Response(JSON.stringify({ error: { message: 'fallbacks: unknown beta' } }), { status: 400 });
+    return stream(events());
+  } });
+  const job = await provider.create(prepareClaudeBody({ content: [{ type: 'text', text: 'x' }] }, 'claude-opus-5-5'));
+  for (let i = 0; i < 50 && (await provider.retrieve(job.id)).status === 'in_progress'; i++) await tick();
+  assert.equal((await provider.retrieve(job.id)).status, 'completed');
+  assert.deepEqual(sent, [{ beta: 'server-side-fallback-2026-07-01', fallbacks: 'default' }, { beta: undefined, fallbacks: undefined }]);
+  await rm(directory, { recursive: true, force: true });
+});
