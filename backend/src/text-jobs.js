@@ -4,8 +4,10 @@ import { prepareKimiBody, DEFAULT_KIMI_MODEL } from './kimi-provider.js';
 
 export function prepareTextBody(input, defaultModel, claudeModel = DEFAULT_CLAUDE_MODEL, kimiModel = DEFAULT_KIMI_MODEL) {
   if (input?.provider && !['gpt', 'claude', 'kimi'].includes(input.provider)) throw Object.assign(new Error('Unsupported text provider.'), { status: 400 });
-  if (input?.provider === 'claude') return prepareClaudeBody(input, claudeModel);
-  if (input?.provider === 'kimi') return prepareKimiBody(input, kimiModel);
+  // Modèle choisi par l'utilisateur dans ce fournisseur (ex. claude-sonnet-5-5), sinon celui de Render.
+  const chosen = typeof input?.model === 'string' ? input.model.trim() : '';
+  if (input?.provider === 'claude') return prepareClaudeBody(input, /^claude-[\w.-]{1,60}$/.test(chosen) ? chosen : claudeModel);
+  if (input?.provider === 'kimi') return prepareKimiBody(input, /^kimi-[\w.-]{1,60}$/.test(chosen) ? chosen : kimiModel);
   const clean = (value) => typeof value === 'string' ? value.trim() : '';
   const requested = clean(input?.model);
   const model = /^(gpt|o\d|chatgpt)[\w.-]*$/i.test(requested) ? requested : defaultModel;

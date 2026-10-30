@@ -114,3 +114,11 @@ test('Claude cancellation aborts the original provider request and never starts 
   await tick();
   assert.equal((await provider.retrieve(job.id)).status, 'cancelled');
 });
+
+test('the model chosen by the user inside a provider is used, a model of another provider never', () => {
+  const content = [{ type: 'text', text: 'x' }];
+  assert.equal(prepareTextBody({ provider: 'claude', model: 'claude-sonnet-5-5', content }, 'gpt-default').model, 'claude-sonnet-5-5');
+  assert.equal(prepareTextBody({ provider: 'claude', model: 'gpt-6.1-sol', content }, 'gpt-default').model, 'claude-opus-5-5');
+  assert.equal(prepareTextBody({ provider: 'kimi', model: 'kimi-k3', content }, 'gpt-default').model, 'kimi-k3');
+  assert.equal(prepareTextBody({ provider: 'kimi', model: 'claude-opus-5-5', content }, 'gpt-default').model, 'kimi-k3.1-pro');
+});
