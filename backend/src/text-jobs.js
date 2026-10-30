@@ -35,7 +35,7 @@ const pending = new Set(['queued', 'in_progress']);
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 
 /** Creation is never retried. Signed response tickets survive a backend restart. */
-export function createTextJobs({ secret, create, retrieve, cancel, extractText, now = Date.now }) {
+export function createTextJobs({ secret, create, retrieve, cancel, extractText, now = Date.now, maxJobs = 5000 }) {
   const jobs = new Map();
   const sign = (value) => {
     const encoded = Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -98,8 +98,18 @@ export function createTextJobs({ secret, create, retrieve, cancel, extractText, 
         if (existing.digest !== digest) fail(409, 'Request ID already belongs to a different input.');
         return snapshot(existing);
       }
-      for (const [id, job] of jobs) if (!['submitting', 'queued', 'in_progress'].includes(job.state) && now() - job.at > 86_400_000) jobs.delete(id);
-      if (jobs.size >= 1000) fail(429, 'Text job capacity reached; no provider request was started.');
+      // Mémoire bornée : une tâche terminée reste 2 h (même identifiant renvoyé = même réponse),
+      // une tâche sans nouvelles depuis 6 h est oubliée (son ticket signé la retrouve encore).
+      for (const [id, job] of jobs) {
+        const age = now() - job.at;
+        if (age > 6 * 3_600_000 || (!['submitting', 'queued', 'in_progress'].includes(job.state) && age > 2 * 3_600_000)) jobs.delete(id);
+      }
+      // Plein : on libère d'abord les tâches terminées les plus anciennes au lieu de refuser.
+      if (jobs.size >= maxJobs) {
+        const done = [...jobs].filter(([, job]) => !['submitting', 'queued', 'in_progress'].includes(job.state)).sort((a, b) => a[1].at - b[1].at);
+        for (const [id] of done.slice(0, jobs.size - maxJobs + 1)) jobs.delete(id);
+      }
+      if (jobs.size >= maxJobs) fail(429, 'Text job capacity reached; no provider request was started.');
       const job = { owner, requestId, digest, state: 'submitting', at: now(), cancelRequested: false };
       jobs.set(key, job);
       // Persist the operation identity before making exactly one billable submission.

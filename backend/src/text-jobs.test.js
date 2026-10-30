@@ -109,3 +109,26 @@ test('request preparation preserves models, images and token budgets', () => {
   assert.equal(prepareTextBody({ cacheKey: 'game-agent:p1', content: [{ type: 'text', text: 'x' }] }, 'default').prompt_cache_key, 'game-agent:p1');
   assert.equal(prepareTextBody({ cacheKey: 'bad key!', content: [{ type: 'text', text: 'x' }] }, 'default').prompt_cache_key, undefined);
 });
+
+test('a full job table frees the oldest finished jobs instead of refusing new work', async () => {
+  let clock = 0;
+  const jobs = setup({ now: () => clock, maxJobs: 3 });
+  const ids = ['1', '2', '3', '4'].map((n) => `aaaaaaaa-bbbb-cccc-dddd-00000000000${n}`);
+  for (const job of ids.slice(0, 3)) { clock++; jobs.start('owner', job, { model: 'm' }); }
+  await tick();
+  for (const job of ids.slice(0, 3)) await jobs.read('owner', job);
+  clock++;
+  assert.equal(jobs.start('owner', ids[3], { model: 'm' }).state, 'submitting');
+  await assert.rejects(() => jobs.read('owner', ids[0]), /not found/);
+  assert.equal((await jobs.read('owner', ids[1])).state, 'completed');
+});
+
+test('stale jobs are forgotten after their retention time', async () => {
+  let clock = 0;
+  const jobs = setup({ now: () => clock, maxJobs: 2, create: () => new Promise(() => {}) });
+  jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000001', { model: 'm' });
+  jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000002', { model: 'm' });
+  assert.throws(() => jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000003', { model: 'm' }), /capacity/);
+  clock = 6 * 3_600_000 + 1;
+  assert.equal(jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000003', { model: 'm' }).state, 'submitting');
+});
