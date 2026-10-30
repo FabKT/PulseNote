@@ -123,12 +123,12 @@ test('a full job table frees the oldest finished jobs instead of refusing new wo
   assert.equal((await jobs.read('owner', ids[1])).state, 'completed');
 });
 
-test('stale jobs are forgotten after their retention time', async () => {
+test('there is no capacity limit and stale jobs are forgotten after their retention time', async () => {
   let clock = 0;
-  const jobs = setup({ now: () => clock, maxJobs: 2, create: () => new Promise(() => {}) });
-  jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000001', { model: 'm' });
-  jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000002', { model: 'm' });
-  assert.throws(() => jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000003', { model: 'm' }), /capacity/);
+  const jobs = setup({ now: () => clock, create: () => new Promise(() => {}) });
+  for (let n = 0; n < 3000; n++) jobs.start('owner', `aaaaaaaa-bbbb-cccc-dddd-${String(n).padStart(12, '0')}`, { model: 'm' });
+  assert.equal((await jobs.read('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000002999')).state, 'submitting');
   clock = 6 * 3_600_000 + 1;
-  assert.equal(jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000003', { model: 'm' }).state, 'submitting');
+  jobs.start('owner', 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff', { model: 'm' });
+  await assert.rejects(() => jobs.read('owner', 'aaaaaaaa-bbbb-cccc-dddd-000000000000'), /not found/);
 });

@@ -35,7 +35,7 @@ const pending = new Set(['queued', 'in_progress']);
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 
 /** Creation is never retried. Signed response tickets survive a backend restart. */
-export function createTextJobs({ secret, create, retrieve, cancel, extractText, now = Date.now, maxJobs = 5000 }) {
+export function createTextJobs({ secret, create, retrieve, cancel, extractText, now = Date.now, maxJobs = Infinity }) {
   const jobs = new Map();
   const sign = (value) => {
     const encoded = Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -104,12 +104,12 @@ export function createTextJobs({ secret, create, retrieve, cancel, extractText, 
         const age = now() - job.at;
         if (age > 6 * 3_600_000 || (!['submitting', 'queued', 'in_progress'].includes(job.state) && age > 2 * 3_600_000)) jobs.delete(id);
       }
-      // Plein : on libère d'abord les tâches terminées les plus anciennes au lieu de refuser.
+      // Aucune limite de places : la table ne garde que les tâches récentes (ci-dessus). Un plafond
+      // optionnel (tests) libère d'abord les tâches terminées les plus anciennes.
       if (jobs.size >= maxJobs) {
         const done = [...jobs].filter(([, job]) => !['submitting', 'queued', 'in_progress'].includes(job.state)).sort((a, b) => a[1].at - b[1].at);
         for (const [id] of done.slice(0, jobs.size - maxJobs + 1)) jobs.delete(id);
       }
-      if (jobs.size >= maxJobs) fail(429, 'Text job capacity reached; no provider request was started.');
       const job = { owner, requestId, digest, state: 'submitting', at: now(), cancelRequested: false };
       jobs.set(key, job);
       // Persist the operation identity before making exactly one billable submission.
